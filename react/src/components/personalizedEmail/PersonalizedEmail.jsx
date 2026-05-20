@@ -939,9 +939,12 @@ export default function PersonalizedEmail({ user, onReady }) {
         setLastSentPayload(payloadWithReceipt);
 
         try {
+            // text/plain keeps this a CORS-simple request — Power Automate's
+            // new *.environment.api.powerplatform.com endpoint doesn't answer
+            // OPTIONS preflight; the trigger still parses the body as JSON.
             const response = await fetch(powerAutomateConnection.url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
                 body: JSON.stringify(payloadWithReceipt)
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -1088,7 +1091,7 @@ export default function PersonalizedEmail({ user, onReady }) {
 
                 const response = await fetch(powerAutomateConnection.url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
                     body: JSON.stringify(testPayloadWithReceipt)
                 });
 
