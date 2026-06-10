@@ -17,6 +17,7 @@ import {
 
 export const EMAIL_TEMPLATES_KEY = "emailTemplates";
 export const CUSTOM_PARAMS_KEY = "customEmailParameters";
+export const LAST_EMAIL_SENT_KEY = "lastEmailSent";
 
 // Standard, built-in parameters that are always available
 export const standardParameters = ['FirstName', 'LastName', 'StudentEmail', 'PersonalEmail', 'Grade', 'DaysOut', 'Assigned'];
