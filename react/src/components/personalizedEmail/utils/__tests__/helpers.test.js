@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     getTodaysLdaSheetName,
+    formatLastSentStamp,
     getNameParts,
     isValidEmail,
     isValidHttpUrl,
@@ -31,6 +32,44 @@ describe('getTodaysLdaSheetName', () => {
     it('handles December (12-month case)', () => {
         vi.setSystemTime(new Date(2025, 11, 31));
         expect(getTodaysLdaSheetName()).toBe('LDA 12-31-2025');
+    });
+});
+
+describe('formatLastSentStamp', () => {
+    it('shows the time when the timestamp is from today', () => {
+        const now = new Date(2026, 5, 10, 15, 30); // June 10, 2026 3:30 PM
+        const sent = new Date(2026, 5, 10, 13, 54).toISOString();
+        expect(formatLastSentStamp(sent, now)).toBe('at 1:54 pm');
+    });
+
+    it('uses am, 12-hour clock, and zero-padded minutes', () => {
+        const now = new Date(2026, 5, 10, 15, 30);
+        expect(formatLastSentStamp(new Date(2026, 5, 10, 9, 5).toISOString(), now)).toBe('at 9:05 am');
+        expect(formatLastSentStamp(new Date(2026, 5, 10, 0, 7).toISOString(), now)).toBe('at 12:07 am');
+        expect(formatLastSentStamp(new Date(2026, 5, 10, 12, 0).toISOString(), now)).toBe('at 12:00 pm');
+    });
+
+    it('shows a M/D/YY date when the timestamp is from another day', () => {
+        const now = new Date(2026, 5, 10, 9, 0);
+        const sent = new Date(2026, 5, 9, 13, 54).toISOString(); // June 9, 2026
+        expect(formatLastSentStamp(sent, now)).toBe('on 6/9/26');
+    });
+
+    it('treats the same calendar day in a different year as not today', () => {
+        const now = new Date(2026, 5, 10, 9, 0);
+        const sent = new Date(2025, 5, 10, 13, 54).toISOString();
+        expect(formatLastSentStamp(sent, now)).toBe('on 6/10/25');
+    });
+
+    it('zero-pads single-digit two-digit years', () => {
+        const now = new Date(2026, 5, 10);
+        expect(formatLastSentStamp(new Date(2009, 0, 2).toISOString(), now)).toBe('on 1/2/09');
+    });
+
+    it('returns an empty string for invalid or missing timestamps', () => {
+        expect(formatLastSentStamp('not-a-date')).toBe('');
+        expect(formatLastSentStamp(undefined)).toBe('');
+        expect(formatLastSentStamp('')).toBe('');
     });
 });
 

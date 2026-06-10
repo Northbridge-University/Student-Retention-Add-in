@@ -7,6 +7,26 @@ export function getTodaysLdaSheetName() {
     return `LDA ${now.getMonth() + 1}-${now.getDate()}-${now.getFullYear()}`;
 }
 
+// Stamp for the "Last Email sent ..." footer: "at 1:54 pm" when the timestamp
+// falls on today's date, otherwise "on 6/9/26". Empty string if unparsable.
+export function formatLastSentStamp(isoTimestamp, now = new Date()) {
+    const sent = new Date(isoTimestamp);
+    if (isNaN(sent.getTime())) return '';
+
+    const isToday = sent.getFullYear() === now.getFullYear()
+        && sent.getMonth() === now.getMonth()
+        && sent.getDate() === now.getDate();
+
+    if (isToday) {
+        const hours24 = sent.getHours();
+        const hour = hours24 % 12 || 12;
+        const minutes = String(sent.getMinutes()).padStart(2, '0');
+        return `at ${hour}:${minutes} ${hours24 < 12 ? 'am' : 'pm'}`;
+    }
+    const yearTwoDigit = String(sent.getFullYear() % 100).padStart(2, '0');
+    return `on ${sent.getMonth() + 1}/${sent.getDate()}/${yearTwoDigit}`;
+}
+
 export function getNameParts(fullName) {
     if (!fullName || typeof fullName !== 'string') {
         return { first: '', last: '' };

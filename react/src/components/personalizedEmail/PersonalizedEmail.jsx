@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import PillInput from './components/PillInput';
-import { EMAIL_TEMPLATES_KEY, CUSTOM_PARAMS_KEY, standardParameters, specialParameters, QUILL_EDITOR_CONFIG, PARAMETER_BUTTON_STYLES, COLUMN_MAPPINGS } from './utils/constants';
-import { findColumnIndex, normalizeHeader, getTodaysLdaSheetName, getNameParts, isValidEmail, isValidHttpUrl, evaluateMapping, renderTemplate, renderCCTemplate, generateMissingAssignmentsList, buildMissingAssignmentsCache } from './utils/helpers';
+import { EMAIL_TEMPLATES_KEY, CUSTOM_PARAMS_KEY, LAST_EMAIL_SENT_KEY, standardParameters, specialParameters, QUILL_EDITOR_CONFIG, PARAMETER_BUTTON_STYLES, COLUMN_MAPPINGS } from './utils/constants';
+import { findColumnIndex, normalizeHeader, getTodaysLdaSheetName, formatLastSentStamp, getNameParts, isValidEmail, isValidHttpUrl, evaluateMapping, renderTemplate, renderCCTemplate, generateMissingAssignmentsList, buildMissingAssignmentsCache } from './utils/helpers';
 import { generatePdfReceipt } from './utils/receiptGenerator';
 import { downloadMailMergeTemplate, extractFieldNames } from './utils/docxGenerator';
 import { downloadRecipientsXlsx } from './utils/recipientsGenerator';
@@ -70,12 +70,7 @@ export default function PersonalizedEmail({ user, onReady }) {
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [showDownloadModal, setShowDownloadModal] = useState(false);
     const [lastSentPayload, setLastSentPayload] = useState([]);
-    const [lastSentInfo, setLastSentInfo] = useState(() => {
-        try {
-            const stored = localStorage.getItem('lastEmailSent');
-            return stored ? JSON.parse(stored) : null;
-        } catch { return null; }
-    });
+    const [lastSentInfo, setLastSentInfo] = useState(null);
 
     // Pre-loaded templates state
     const [templates, setTemplates] = useState(null); // null = loading, [] = loaded (empty or with data)
@@ -94,11 +89,12 @@ export default function PersonalizedEmail({ user, onReady }) {
                 console.error('Error loading user email:', error);
             }
 
-            // Load connection, custom parameters, and templates in parallel
+            // Load connection, custom parameters, templates, and last-sent info in parallel
             await Promise.all([
                 checkConnection(),
                 loadCustomParameters(),
-                loadTemplates()
+                loadTemplates(),
+                loadLastSentInfo()
             ]);
             // Call onReady after all initialization is complete
             if (onReady) onReady();
@@ -301,6 +297,40 @@ export default function PersonalizedEmail({ user, onReady }) {
             await context.sync();
             return paramsSetting.value ? JSON.parse(paramsSetting.value) : [];
         });
+    };
+
+    const loadLastSentInfo = async () => {
+        try {
+            const info = await Excel.run(async (context) => {
+                const setting = context.workbook.settings.getItemOrNullObject(LAST_EMAIL_SENT_KEY);
+                setting.load("value");
+                await context.sync();
+                return setting.value ? JSON.parse(setting.value) : null;
+            });
+            setLastSentInfo(info);
+        } catch (error) {
+            console.error('Error loading last email sent info:', error);
+        }
+    };
+
+    // Persisted to workbook settings (not localStorage) so everyone sharing the
+    // workbook sees when emails last went out and who sent them.
+    const recordLastSent = async (count) => {
+        const info = {
+            timestamp: new Date().toISOString(),
+            byName: user || '',
+            byEmail: userEmail || '',
+            count
+        };
+        setLastSentInfo(info);
+        try {
+            await Excel.run(async (context) => {
+                context.workbook.settings.add(LAST_EMAIL_SENT_KEY, JSON.stringify(info));
+                await context.sync();
+            });
+        } catch (error) {
+            console.error('Error saving last email sent info:', error);
+        }
     };
 
     const saveCustomParameters = async (params) => {
@@ -945,9 +975,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                 body: JSON.stringify(payloadWithReceipt)
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const info = { count: payload.emails.length, timestamp: new Date().toISOString() };
-            setLastSentInfo(info);
-            try { localStorage.setItem('lastEmailSent', JSON.stringify(info)); } catch {}
+            await recordLastSent(payload.emails.length);
             setStatus(`Successfully sent ${payload.emails.length} emails!`);
             setShowSuccessModal(true);
         } catch (error) {
@@ -1005,9 +1033,6 @@ export default function PersonalizedEmail({ user, onReady }) {
         const stamp = new Date().toISOString().slice(0, 10);
         try {
             await downloadRecipientsXlsx(recipients, fieldNames, `email-recipients-${stamp}.xlsx`);
-            const info = { count: recipients.length, timestamp: new Date().toISOString(), action: 'download' };
-            setLastSentInfo(info);
-            try { localStorage.setItem('lastEmailSent', JSON.stringify(info)); } catch {}
             setStatus(`Downloaded recipient list (${recipients.length} ${recipients.length === 1 ? 'row' : 'rows'}).`);
         } catch (error) {
             setStatus(`Failed to generate recipient list: ${error.message}`);
@@ -1112,18 +1137,6 @@ export default function PersonalizedEmail({ user, onReady }) {
         return isFromValid && isSubjectValid && isBodyValid && areRecipientsValid;
     };
 
-    const formatLastSent = (iso) => {
-        const diff = Date.now() - new Date(iso).getTime();
-        const mins = Math.floor(diff / 60000);
-        if (mins < 1) return 'just now';
-        if (mins < 60) return `${mins}m ago`;
-        const hrs = Math.floor(mins / 60);
-        if (hrs < 24) return `${hrs}h ago`;
-        const days = Math.floor(hrs / 24);
-        if (days < 7) return `${days}d ago`;
-        return new Date(iso).toLocaleDateString();
-    };
-
     const getValidationMessage = () => {
         const missing = [];
         if (!fromPills[0] || !fromPills[0].trim()) missing.push('From address');
@@ -1197,6 +1210,8 @@ export default function PersonalizedEmail({ user, onReady }) {
             </div>
         );
     }
+
+    const lastSentStamp = lastSentInfo?.timestamp ? formatLastSentStamp(lastSentInfo.timestamp) : '';
 
     // Show work-in-progress screen when no Power Automate connection is configured.
     // Email Composer View — shared by powerautomate (send) and individual (download as .docx) modes
@@ -1442,6 +1457,12 @@ export default function PersonalizedEmail({ user, onReady }) {
                 </p>
             )}
             <p className="text-xs text-gray-500 mt-2 h-4 text-center">{status}</p>
+            {lastSentStamp && (
+                <p className="text-xs text-gray-400 mt-1 text-center">
+                    Last Email sent {lastSentStamp}
+                    {(lastSentInfo.byName || lastSentInfo.byEmail) ? ` by ${lastSentInfo.byName || lastSentInfo.byEmail}` : ''}
+                </p>
+            )}
             </div>
 
             {/* Modals */}
