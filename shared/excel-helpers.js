@@ -50,6 +50,47 @@ export function findColumnIndex(headers, possibleNames) {
 }
 
 /**
+ * Generates equivalent spellings of a sheet name that ends in a date, so a
+ * sheet can be found regardless of zero-padding or separator differences:
+ *
+ *   sheetNameDateVariants("LDA 6-10-2026")
+ *     → ["LDA 6-10-2026", "LDA 06-10-2026", "LDA 06/10/2026", ...]
+ *
+ * Names that don't end in a M/D/YYYY-style date are returned as a
+ * single-element array unchanged. The original name is always first.
+ *
+ * @param {string} name - Sheet name, possibly with a date suffix.
+ * @returns {string[]} Unique name variants to try, original first.
+ */
+export function sheetNameDateVariants(name) {
+    if (!name || typeof name !== 'string') return [name];
+
+    // Extract any prefix (e.g. "LDA " from "LDA 01-11-2026")
+    const datePattern = /^(.*?)(\d{1,2}[/-]\d{1,2}[/-]\d{4})$/;
+    const match = name.match(datePattern);
+    if (!match) return [name];
+
+    const prefix = match[1];
+    const datePart = match[2];
+    const separator = datePart.includes('/') ? '/' : datePart.includes('-') ? '-' : null;
+    if (!separator) return [name];
+
+    const parts = datePart.split(separator);
+    if (parts.length !== 3) return [name];
+    const [month, day, year] = parts;
+
+    const variations = new Set();
+    variations.add(name);
+    ['/', '-'].forEach(sep => {
+        variations.add(`${prefix}${month.padStart(2, '0')}${sep}${day.padStart(2, '0')}${sep}${year}`);
+        variations.add(`${prefix}${parseInt(month, 10)}${sep}${parseInt(day, 10)}${sep}${year}`);
+        variations.add(`${prefix}${month.padStart(2, '0')}${sep}${parseInt(day, 10)}${sep}${year}`);
+        variations.add(`${prefix}${parseInt(month, 10)}${sep}${day.padStart(2, '0')}${sep}${year}`);
+    });
+    return Array.from(variations);
+}
+
+/**
  * Parses an Excel HYPERLINK formula string and returns its url and display text.
  * Returns null if the string isn't a valid HYPERLINK formula.
  *

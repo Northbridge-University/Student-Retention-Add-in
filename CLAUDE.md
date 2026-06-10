@@ -14,7 +14,11 @@ two Office runtimes plus shared code:
   doc property for Power Automate-initiated highlights
 - `shared/` — code used by both runtimes: `chromeExtensionService.js`
   singleton, sheet/batch constants, Excel helpers (`findColumnIndex`,
-  `parseHyperlinkFormula`, `normalizeHeader`), and `columnAliases.js`
+  `parseHyperlinkFormula`, `normalizeHeader`, `sheetNameDateVariants`),
+  `highlightQueue.js` (pure coalescing for the highlight request queue),
+  and `columnAliases.js`. Highlight requests from the extension are
+  executed ONLY by the commands runtime (the taskpane calls
+  `setHighlightExecutionEnabled(false)`), serialized through the queue.
 
 ## Deploy model
 
