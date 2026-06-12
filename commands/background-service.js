@@ -25,6 +25,7 @@ import {
     sendSheetListToExtension,
 } from './src/chrome-extension-messaging.js';
 import { startCommandPropertyPoller } from './src/power-automate-poller.js';
+import { sendScanFilterSettingsToExtension } from './src/scan-filter-settings.js';
 
 // Required for the Analytics ribbon button — manifest uses ShowTaskpane,
 // but Office still expects an associated function.
@@ -116,6 +117,11 @@ Office.onReady(() => {
             case 'SRK_REQUEST_SHEET_LIST':
                 console.log("Background: Received sheet list request from extension");
                 sendSheetListToExtension();
+                break;
+
+            case 'SRK_REQUEST_SCAN_FILTER_SETTINGS':
+                console.log("Background: Received scan filter settings request from extension");
+                sendScanFilterSettingsToExtension();
                 break;
         }
     });
