@@ -64,6 +64,12 @@ Office.onReady(() => {
 
     // Dispatch incoming extension events
     chromeExtensionService.addListener((event) => {
+        // Side panel heartbeat pings arrive every few seconds and are
+        // answered by setupPingResponseListener; nothing below handles
+        // them, so skip the per-event logging entirely.
+        if (event.type === "message" && event.data?.type === "SRK_PING" && event.data.heartbeat) {
+            return;
+        }
         console.log("Background: Chrome Extension event:", event);
 
         if (event.type === "installed") {

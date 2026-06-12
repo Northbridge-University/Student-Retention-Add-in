@@ -19,13 +19,20 @@ import chromeExtensionService from '../../shared/chromeExtensionService.js';
  */
 export function setupPingResponseListener() {
     window.addEventListener("message", (event) => {
+        // Heartbeat pings from the extension side panel repeat every few
+        // seconds for as long as the panel is open; answer them silently
+        // so this console stays readable.
+        const isHeartbeatPing = !!(event.data && event.data.type === "SRK_PING" && event.data.heartbeat);
+
         // Log all incoming messages for debugging
-        if (event.data && event.data.type && event.data.type.startsWith('SRK_')) {
+        if (event.data && event.data.type && event.data.type.startsWith('SRK_') && !isHeartbeatPing) {
             console.log(`📨 Background Service: Received ${event.data.type} message:`, event.data);
         }
 
         if (event.data && event.data.type === "SRK_PING") {
-            console.log('🏓 Background Service: Received SRK_PING, sending pong...');
+            if (!isHeartbeatPing) {
+                console.log('🏓 Background Service: Received SRK_PING, sending pong...');
+            }
 
             // Send pong response back to extension
             window.postMessage({
@@ -34,7 +41,9 @@ export function setupPingResponseListener() {
                 source: "excel-addin-background"
             }, "*");
 
-            console.log('✅ Background Service: SRK_PONG sent to Chrome extension');
+            if (!isHeartbeatPing) {
+                console.log('✅ Background Service: SRK_PONG sent to Chrome extension');
+            }
         }
 
         if (event.data && event.data.type === "SRK_LINKS") {
