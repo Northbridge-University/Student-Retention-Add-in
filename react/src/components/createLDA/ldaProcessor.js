@@ -29,6 +29,11 @@ const FORMAT_BATCH_SIZE = 100;
 // size.
 const MAX_OPS_PER_SYNC = 400;
 
+// Fixed width for the Outreach column so wrapped retention messages have room
+// to breathe instead of autofitting to a single long line. Office.js column
+// widths are in points; 290px ≈ 217.5pt at 96 DPI.
+const OUTREACH_COLUMN_WIDTH = 217.5;
+
 /**
  * Helper to convert Excel serial date to MM-DD-YY string
  */
@@ -1186,6 +1191,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                     // Autofit & hide columns
                     newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
+
+                    // Pin the Outreach column to a fixed width with text wrapping so
+                    // long retention messages wrap instead of stretching the column.
+                    if (outreachColIndex !== -1) {
+                        const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
+                        outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
+                        outreachCol.format.wrapText = true;
+                    }
                     await context.sync();
 
                     // Batch hidden column operations to avoid queue overflow
@@ -1590,6 +1603,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                 // Autofit
                 newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
+
+                // Pin the Outreach column to a fixed width with text wrapping so
+                // long retention messages wrap instead of stretching the column.
+                if (outreachColIndex !== -1) {
+                    const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
+                    outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
+                    outreachCol.format.wrapText = true;
+                }
 
                 // --- Apply hidden columns (must be LAST after autofit) ---
                 const HIDE_BATCH = 50;
