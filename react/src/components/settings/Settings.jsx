@@ -685,7 +685,7 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 												position: 'absolute',
 												inset: 0,
 												borderRadius: 9999,
-												background: !!cur ? '#4f46e5' : '#e5e7eb',
+												background: !!cur ? '#002539' : '#e5e7eb',
 												transition: 'background-color 160ms linear',
 												padding: 2,
 												boxSizing: 'border-box'

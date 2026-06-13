@@ -226,6 +226,13 @@ function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dnc
             : (day === 3 || day === 23) ? 'rd' : 'th';
         const friendlyDate = `${monthNames[ldaObj.date.getMonth()]} ${day}${suffix}`;
         const author = formatAuthorSuffix(ldaObj.createdBy, authorFormat);
+        // When the engagement date is tomorrow, phrase it as "by tomorrow".
+        const tomorrow = new Date();
+        tomorrow.setHours(0, 0, 0, 0);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        if (ldaObj.date.getTime() === tomorrow.getTime()) {
+            return `Student will engage by tomorrow${author}`;
+        }
         return `Student will engage on ${friendlyDate}${author}`;
     }
 
@@ -1086,7 +1093,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const isDncOutreach = settings.expandedDNC && (isGeneralDnc || dncTagsArr.includes('dnc - phone'));
                     const suppressRetentionHighlight = isDncOutreach;
                     // LDA-tag follow-up rows highlight in settings.ldaTagColor (default yellow).
-                    const isLdaFollowUp = !!retentionMsg && retentionMsg.startsWith('Student will engage on');
+                    const isLdaFollowUp = !!retentionMsg && retentionMsg.startsWith('Student will engage');
                     const isNextAssignmentDue = retentionMsg && retentionMsg.startsWith("Student's next assignment is due");
 
                     // --- Course Start Baseline Check ---
@@ -1480,7 +1487,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const isDncOutreach = settings.expandedDNC && (isGeneralDnc || dncTagsArr.includes('dnc - phone'));
                     const suppressRetentionHighlight = isDncOutreach;
                     // LDA-tag follow-up rows highlight in settings.ldaTagColor (default yellow).
-                    const isLdaFollowUp = !!retentionMsg && retentionMsg.startsWith('Student will engage on');
+                    const isLdaFollowUp = !!retentionMsg && retentionMsg.startsWith('Student will engage');
 
                     // 2b. Course Start Baseline Check
                     let courseStartMsg = null;
