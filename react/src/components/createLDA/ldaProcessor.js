@@ -29,10 +29,20 @@ const FORMAT_BATCH_SIZE = 100;
 // size.
 const MAX_OPS_PER_SYNC = 400;
 
-// Fixed width for the Outreach column so wrapped retention messages have room
-// to breathe instead of autofitting to a single long line. Office.js column
-// widths are in points; 290px ≈ 217.5pt at 96 DPI.
-const OUTREACH_COLUMN_WIDTH = 217.5;
+// Fixed output-column widths. Office.js column widths are in points; pixels
+// convert at ~0.75pt/px (96 DPI). Keyed by normalized column name (lowercased,
+// whitespace removed) so both settings names and raw master headers match.
+const FIXED_COLUMN_WIDTHS = {
+    outreach: 217.5,            // 290px (also wrapped, see WRAP_COLUMN_NAMES)
+    assigned: 57,              // 76px
+    programversion: 267,       // 356px
+    missingassignments: 51.75, // 69px
+    grade: 69,                 // 92px (Last Course Grade — settings name is "Grade")
+    lastcoursegrade: 69,       // 92px (when shown under its raw master header)
+    nextassignmentdue: 92.25,  // 123px
+};
+const WRAP_COLUMN_NAMES = new Set(['outreach']);
+const normalizeColName = (name) => String(name || '').toLowerCase().replace(/\s+/g, '');
 
 /**
  * Helper to convert Excel serial date to MM-DD-YY string
@@ -156,26 +166,34 @@ function lookupTagEntry(map, sIds) {
  * @param {Map} dncMessageMap - Map of ID -> { message, isQuote } for the qualifying DNC comment
  * @returns {string|null} - The formatted message or null
  */
-function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, includeNextAssignmentDue = true) {
+function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, includeNextAssignmentDue = true, expandedDNC = false) {
     // Priority 1: Explicit DNC (Highest Priority - Stop everything)
-    // Only a general "DNC" or "DNC - Phone" tag populates the Outreach column.
-    // Other variants ("DNC - Email", "DNC - Other Phone") write nothing here
-    // (their phone columns are still struck through downstream).
     const dncTag = lookupTagEntry(dncMap, sIds);
     if (dncTag) {
         // Split comma-separated tags and check each individually
         const individualTags = dncTag.split(',').map(t => t.trim());
-        const triggersOutreach = individualTags.some(tag => tag === 'dnc' || tag === 'dnc - phone');
-        if (triggersOutreach) {
-            // Use the DNC comment's own text as the outreach message. But when that
-            // comment is a quote, don't dump the whole quote in — just flag it.
-            // Append " - <author>" so we know who left the DNC note.
-            const dncMsg = lookupTagEntry(dncMessageMap, sIds);
-            const author = (dncMsg && dncMsg.createdBy) ? ` - ${dncMsg.createdBy}` : '';
-            if (dncMsg && dncMsg.message && !dncMsg.isQuote) {
-                return `${dncMsg.message}${author}`;
+        if (expandedDNC) {
+            // Expanded DNC: only a general "DNC" or "DNC - Phone" tag populates the
+            // Outreach column, using the comment text (or "Do not contact" for a quote)
+            // plus the note author. Other variants write nothing here (their phone
+            // columns are still struck through downstream).
+            const triggersOutreach = individualTags.some(tag => tag === 'dnc' || tag === 'dnc - phone');
+            if (triggersOutreach) {
+                const dncMsg = lookupTagEntry(dncMessageMap, sIds);
+                const author = (dncMsg && dncMsg.createdBy) ? ` - ${dncMsg.createdBy}` : '';
+                if (dncMsg && dncMsg.message && !dncMsg.isQuote) {
+                    return `${dncMsg.message}${author}`;
+                }
+                return `Do not contact${author}`;
             }
-            return `Do not contact${author}`;
+        } else {
+            // Legacy DNC: any DNC except the phone-specific variants → "Do not contact".
+            const hasExcludableDnc = individualTags.some(tag =>
+                tag.includes('dnc') && tag !== 'dnc - phone' && tag !== 'dnc - other phone'
+            );
+            if (hasExcludableDnc) {
+                return "Do not contact";
+            }
         }
     }
 
@@ -256,6 +274,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
             includeLDATag: userOverrides.includeLDATag ?? true,
             includeDNCTag: userOverrides.includeDNCTag ?? true,
             includeNextAssignmentDue: userOverrides.includeNextAssignmentDue ?? true,
+            // Advanced toggles: expanded DNC outreach messages (off = legacy
+            // "Do not contact") and compact/fixed column widths (off = autosize only).
+            expandedDNC: userOverrides.expandedDNC ?? false,
+            compactColumnWidth: userOverrides.compactColumnWidth ?? true,
             sheetNameMode: userOverrides.sheetNameMode ?? 'date',
             columns: workbookSettings.columns,
             advisorAssignment: userOverrides.advisorAssignment ?? { enabled: false, advisors: [] }
@@ -872,6 +894,19 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 }
             }
 
+            // Pin specific output columns to fixed widths (and wrap where configured)
+            // after autofit, so messages wrap and key columns keep a consistent size.
+            const applyFixedColumnWidths = (sheet) => {
+                outputColumns.forEach((colConfig, idx) => {
+                    const key = normalizeColName(colConfig.name);
+                    const width = FIXED_COLUMN_WIDTHS[key];
+                    if (width == null) return;
+                    const col = sheet.getRangeByIndexes(0, idx, 1, 1).getEntireColumn();
+                    col.format.columnWidth = width;
+                    if (WRAP_COLUMN_NAMES.has(key)) col.format.wrapText = true;
+                });
+            };
+
             // --- Detect Multi-Campus Mode ---
             let isMultiCampus = false;
             let campusList = [];
@@ -1020,13 +1055,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const sIds = [sId, sNumber].filter((v, i, a) => v && a.indexOf(v) === i);
                     const missingVal = (missingIdx !== -1) ? rowObj.values[missingIdx] : null;
                     const nextAssignmentDueVal = (nextAssignmentDueIdx !== -1) ? rowObj.values[nextAssignmentDueIdx] : null;
-                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue);
+                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC);
                     const isGradeBookFlag = retentionMsg && retentionMsg.includes("Please check their Grade Book");
                     const isRetentionActive = !!retentionMsg && !isGradeBookFlag;
                     const dncTagText = lookupTagEntry(dncMap, sIds);
-                    // A "DNC" / "DNC - Phone" student stays red even when the outreach
-                    // message is the student's own comment text rather than "Do not contact".
-                    const isDncOutreach = !!dncTagText && dncTagText.split(',').map(t => t.trim()).some(t => t === 'dnc' || t === 'dnc - phone');
+                    // Only a general "DNC" highlights the whole row red — even when the
+                    // outreach message is the student's own comment text. "DNC - Phone"
+                    // gets its outreach message but is left as a normal (orange) row.
+                    const isGeneralDnc = !!dncTagText && dncTagText.split(',').map(t => t.trim()).includes('dnc');
                     const isNextAssignmentDue = retentionMsg && retentionMsg.startsWith("Student's next assignment is due");
 
                     // --- Course Start Baseline Check ---
@@ -1049,7 +1085,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     }
 
                     let partialRowColor = "#FFEDD5";
-                    if (retentionMsg === "Do not contact" || isDncOutreach) {
+                    if (retentionMsg === "Do not contact" || (settings.expandedDNC && isGeneralDnc)) {
                         partialRowColor = "#FFC7CE";
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda";
@@ -1196,13 +1232,8 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     // Autofit & hide columns
                     newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
 
-                    // Pin the Outreach column to a fixed width with text wrapping so
-                    // long retention messages wrap instead of stretching the column.
-                    if (outreachColIndex !== -1) {
-                        const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
-                        outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
-                        outreachCol.format.wrapText = true;
-                    }
+                    // Pin configured columns to fixed widths (Outreach also wraps) after autofit.
+                    if (settings.compactColumnWidth) applyFixedColumnWidths(newSheet);
                     await context.sync();
 
                     // Batch hidden column operations to avoid queue overflow
@@ -1405,11 +1436,12 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const nextAssignmentDueVal = (nextAssignmentDueIdx !== -1) ? rowObj.values[nextAssignmentDueIdx] : null;
 
                     // 2. Generate Retention Message using helper
-                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue);
+                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC);
                     const dncTagText = lookupTagEntry(dncMap, sIds);
-                    // A "DNC" / "DNC - Phone" student stays red even when the outreach
-                    // message is the student's own comment text rather than "Do not contact".
-                    const isDncOutreach = !!dncTagText && dncTagText.split(',').map(t => t.trim()).some(t => t === 'dnc' || t === 'dnc - phone');
+                    // Only a general "DNC" highlights the whole row red — even when the
+                    // outreach message is the student's own comment text. "DNC - Phone"
+                    // gets its outreach message but is left as a normal (orange) row.
+                    const isGeneralDnc = !!dncTagText && dncTagText.split(',').map(t => t.trim()).includes('dnc');
 
                     // 2b. Course Start Baseline Check
                     let courseStartMsg = null;
@@ -1438,7 +1470,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                     // Determine Row/Partial Color:
                     let partialRowColor = "#FFEDD5"; // Orange Default
-                    if (retentionMsg === "Do not contact" || isDncOutreach) {
+                    if (retentionMsg === "Do not contact" || (settings.expandedDNC && isGeneralDnc)) {
                         partialRowColor = "#FFC7CE"; // Red for DNC
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda"; // Light green for zero missing + next assignment due
@@ -1610,13 +1642,8 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 // Autofit
                 newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
 
-                // Pin the Outreach column to a fixed width with text wrapping so
-                // long retention messages wrap instead of stretching the column.
-                if (outreachColIndex !== -1) {
-                    const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
-                    outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
-                    outreachCol.format.wrapText = true;
-                }
+                // Pin configured columns to fixed widths (Outreach also wraps) after autofit.
+                if (settings.compactColumnWidth) applyFixedColumnWidths(newSheet);
 
                 // --- Apply hidden columns (must be LAST after autofit) ---
                 const HIDE_BATCH = 50;

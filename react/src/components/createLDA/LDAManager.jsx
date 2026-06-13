@@ -31,6 +31,8 @@ export default function CreateLDAManager({ onReady } = {}) {
     includeLDATag: true,
     includeDNCTag: true,
     includeNextAssignmentDue: true,
+    expandedDNC: false,
+    compactColumnWidth: true,
     sheetNameMode: 'date',
     advisorAssignment: {
       enabled: false,
@@ -103,6 +105,8 @@ export default function CreateLDAManager({ onReady } = {}) {
           includeLDATag: (wb.includeLDATag !== undefined) ? !!wb.includeLDATag : ((wb.includeLdatTag !== undefined) ? !!wb.includeLdatTag : prev.includeLDATag),
           includeDNCTag: (wb.includeDNCTag !== undefined) ? !!wb.includeDNCTag : ((wb.includeDncTag !== undefined) ? !!wb.includeDncTag : prev.includeDNCTag),
           includeNextAssignmentDue: (wb.includeNextAssignmentDue !== undefined) ? !!wb.includeNextAssignmentDue : prev.includeNextAssignmentDue,
+          expandedDNC: (wb.expandedDNC !== undefined) ? !!wb.expandedDNC : prev.expandedDNC,
+          compactColumnWidth: (wb.compactColumnWidth !== undefined) ? !!wb.compactColumnWidth : prev.compactColumnWidth,
           sheetNameMode: wb.sheetNameMode || prev.sheetNameMode,
           advisorAssignment: wb.advisorAssignment || prev.advisorAssignment,
         }));
@@ -174,9 +178,24 @@ export default function CreateLDAManager({ onReady } = {}) {
       // Persist advisorAssignment to workbook settings
       if (key === 'advisorAssignment') {
         saveAdvisorAssignmentToWorkbook(value);
+      } else if (key === 'expandedDNC' || key === 'compactColumnWidth') {
+        saveSettingToWorkbook(key, value);
       }
       return next;
     });
+  };
+
+  const saveSettingToWorkbook = (key, value) => {
+    try {
+      if (typeof window !== 'undefined' && window.Office && Office.context && Office.context.document && Office.context.document.settings) {
+        const wb = Office.context.document.settings.get('workbookSettings') || {};
+        wb[key] = value;
+        Office.context.document.settings.set('workbookSettings', wb);
+        Office.context.document.settings.saveAsync(() => {});
+      }
+    } catch (e) {
+      console.error('Failed to save setting:', key, e);
+    }
   };
 
   const saveAdvisorAssignmentToWorkbook = (advisorAssignment) => {
@@ -869,6 +888,27 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         </div>
         <ChevronRight className="w-4 h-4 text-slate-400" />
       </button>
+
+      {/* Advanced section */}
+      <div className="pt-3 mt-1 border-t border-slate-100">
+        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Advanced</span>
+      </div>
+
+      <ToggleRow
+        key="toggle-expanded-dnc"
+        label="Expanded DNC"
+        tooltip="Fill the Outreach column with the DNC comment text and who left it, instead of a flat 'Do not contact'. Off restores the original DNC behavior."
+        isOn={settings.expandedDNC}
+        onToggle={() => handleToggle('expandedDNC')}
+      />
+
+      <ToggleRow
+        key="toggle-compact-column-width"
+        label="Compact Column Width"
+        tooltip="Pin key columns (Outreach, ProgramVersion, etc.) to fixed widths and wrap the Outreach text. Off autosizes columns like before."
+        isOn={settings.compactColumnWidth}
+        onToggle={() => handleToggle('compactColumnWidth')}
+      />
     </div>
   );
 }
