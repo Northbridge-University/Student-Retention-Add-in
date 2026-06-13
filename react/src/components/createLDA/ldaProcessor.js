@@ -1024,9 +1024,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const isGradeBookFlag = retentionMsg && retentionMsg.includes("Please check their Grade Book");
                     const isRetentionActive = !!retentionMsg && !isGradeBookFlag;
                     const dncTagText = lookupTagEntry(dncMap, sIds);
-                    // A "DNC" / "DNC - Phone" student stays red even when the outreach
-                    // message is the student's own comment text rather than "Do not contact".
-                    const isDncOutreach = !!dncTagText && dncTagText.split(',').map(t => t.trim()).some(t => t === 'dnc' || t === 'dnc - phone');
+                    // Only a general "DNC" highlights the whole row red — even when the
+                    // outreach message is the student's own comment text. "DNC - Phone"
+                    // gets its outreach message but is left as a normal (orange) row.
+                    const isGeneralDnc = !!dncTagText && dncTagText.split(',').map(t => t.trim()).includes('dnc');
                     const isNextAssignmentDue = retentionMsg && retentionMsg.startsWith("Student's next assignment is due");
 
                     // --- Course Start Baseline Check ---
@@ -1049,7 +1050,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     }
 
                     let partialRowColor = "#FFEDD5";
-                    if (retentionMsg === "Do not contact" || isDncOutreach) {
+                    if (retentionMsg === "Do not contact" || isGeneralDnc) {
                         partialRowColor = "#FFC7CE";
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda";
@@ -1407,9 +1408,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     // 2. Generate Retention Message using helper
                     const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue);
                     const dncTagText = lookupTagEntry(dncMap, sIds);
-                    // A "DNC" / "DNC - Phone" student stays red even when the outreach
-                    // message is the student's own comment text rather than "Do not contact".
-                    const isDncOutreach = !!dncTagText && dncTagText.split(',').map(t => t.trim()).some(t => t === 'dnc' || t === 'dnc - phone');
+                    // Only a general "DNC" highlights the whole row red — even when the
+                    // outreach message is the student's own comment text. "DNC - Phone"
+                    // gets its outreach message but is left as a normal (orange) row.
+                    const isGeneralDnc = !!dncTagText && dncTagText.split(',').map(t => t.trim()).includes('dnc');
 
                     // 2b. Course Start Baseline Check
                     let courseStartMsg = null;
@@ -1438,7 +1440,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                     // Determine Row/Partial Color:
                     let partialRowColor = "#FFEDD5"; // Orange Default
-                    if (retentionMsg === "Do not contact" || isDncOutreach) {
+                    if (retentionMsg === "Do not contact" || isGeneralDnc) {
                         partialRowColor = "#FFC7CE"; // Red for DNC
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda"; // Light green for zero missing + next assignment due
