@@ -117,6 +117,24 @@ export const defaultWorkbookSettings = [
 		description: 'How the note author appears in outreach messages: full name (Victor Blanco) or initials (vb).'
 	},
 	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'ldaTagColor',
+		label: 'LDA Tag Color',
+		type: 'string',
+		defaultValue: '#FFFF00',
+		hidden: true,
+		description: 'Highlight color for LDA follow-up outreach comments.'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'dncColor',
+		label: 'DNC Color',
+		type: 'string',
+		defaultValue: '#f2bdbd',
+		hidden: true,
+		description: 'Fill color for DNC outreach comments and the phone-column strikethrough.'
+	},
+	{
 		id: 'powerAutomateUrl',
 		label: 'Power Automate',
 		type: 'powerautomate',

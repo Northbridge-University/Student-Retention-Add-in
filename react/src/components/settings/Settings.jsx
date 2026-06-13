@@ -1178,6 +1178,8 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 					expandedDNC: workbookSettingsState.expandedDNC ?? false,
 					compactColumnWidth: workbookSettingsState.compactColumnWidth ?? true,
 					authorFormat: workbookSettingsState.authorFormat ?? 'initials',
+					ldaTagColor: workbookSettingsState.ldaTagColor ?? '#FFFF00',
+					dncColor: workbookSettingsState.dncColor ?? '#f2bdbd',
 				}}
 				onChange={updateWorkbookSetting}
 			/>
