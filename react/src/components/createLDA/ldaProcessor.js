@@ -212,7 +212,8 @@ function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dnc
             : (day === 2 || day === 22) ? 'nd'
             : (day === 3 || day === 23) ? 'rd' : 'th';
         const friendlyDate = `${monthNames[ldaObj.date.getMonth()]} ${day}${suffix}`;
-        return `[Follow up] Student will engage on ${friendlyDate}`;
+        const author = ldaObj.createdBy ? ` - ${ldaObj.createdBy}` : '';
+        return `Student will engage on ${friendlyDate}${author}`;
     }
 
     // Priority 4: Zero missing assignments with a next assignment due date
@@ -1001,7 +1002,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                                             if (ldaDate >= todayTime) {
                                                 for (const hid of hids) {
                                                     if (!ldaFollowUpMap.has(hid)) {
-                                                        ldaFollowUpMap.set(hid, { date: ldaDate, text: htagRaw });
+                                                        ldaFollowUpMap.set(hid, { date: ldaDate, text: htagRaw, createdBy: hCreatedByIdx !== -1 ? String(hValues[i][hCreatedByIdx] || '').trim() : '' });
                                                     }
                                                 }
                                             }
@@ -1371,7 +1372,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                                             if (ldaDate >= todayTime) {
                                                 for (const hid of hids) {
                                                     if (!ldaFollowUpMap.has(hid)) {
-                                                        ldaFollowUpMap.set(hid, { date: ldaDate, text: htagRaw });
+                                                        ldaFollowUpMap.set(hid, { date: ldaDate, text: htagRaw, createdBy: hCreatedByIdx !== -1 ? String(hValues[i][hCreatedByIdx] || '').trim() : '' });
                                                     }
                                                 }
                                             }
