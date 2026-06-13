@@ -315,8 +315,11 @@ useEffect(() => {
          // Remove months that no longer exist
          Object.keys(mergedMonths).forEach(m => {
            const isCurrentYearMonth = sortedCurrentYearMonths.includes(m);
+           // Year-folder months are keyed by the composite `${year}-${month}`,
+           // so compare against that form (not the bare month) or they'd be
+           // dropped here and lose their collapsed-by-default state.
            const isYearMonth = sortedYears.some(year => {
-             return yearGroups[year] && Object.keys(yearGroups[year]).includes(m);
+             return yearGroups[year] && Object.keys(yearGroups[year]).some(month => `${year}-${month}` === m);
            });
            if (!isCurrentYearMonth && !isYearMonth) delete mergedMonths[m];
          });
