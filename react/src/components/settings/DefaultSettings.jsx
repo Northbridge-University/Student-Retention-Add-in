@@ -82,6 +82,22 @@ export const defaultWorkbookSettings = [
 		description: 'Whether to include the Do Not Contact students.'
 	},
 	{
+		id: 'expandedDNC',
+		label: 'Expanded DNC',
+		type: 'boolean',
+		defaultValue: false,
+		section: 'Create LDA',
+		description: 'Fill the Outreach column with the DNC comment text and who left it, instead of a flat "Do not contact". Off restores the original DNC behavior.'
+	},
+	{
+		id: 'compactColumnWidth',
+		label: 'Compact Column Width',
+		type: 'boolean',
+		defaultValue: true,
+		section: 'Create LDA',
+		description: 'Pin key columns (Outreach, ProgramVersion, etc.) to fixed widths and wrap the Outreach text. Off autosizes columns like before.'
+	},
+	{
 		id: 'powerAutomateUrl',
 		label: 'Power Automate',
 		type: 'powerautomate',
