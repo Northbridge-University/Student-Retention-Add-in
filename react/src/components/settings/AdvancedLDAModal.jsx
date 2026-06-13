@@ -18,7 +18,7 @@ function Segmented({ value, onChange, options, label }) {
           onClick={() => onChange(opt.value)}
           aria-pressed={value === opt.value}
           className={`relative z-10 px-3 py-1 text-xs font-medium rounded-full transition-colors duration-200 ${
-            value === opt.value ? 'bg-[#002539] text-white' : 'text-slate-500 hover:text-slate-700'
+            value === opt.value ? 'bg-[#145F82] text-white' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           {opt.label}
@@ -54,8 +54,8 @@ function Toggle({ checked, onChange, label }) {
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#002539]/20 focus:ring-offset-1 ${
-        checked ? 'bg-[#002539]' : 'bg-slate-200'
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#145F82]/20 focus:ring-offset-1 ${
+        checked ? 'bg-[#145F82]' : 'bg-slate-200'
       }`}
     >
       <span
