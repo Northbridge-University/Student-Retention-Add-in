@@ -29,10 +29,20 @@ const FORMAT_BATCH_SIZE = 100;
 // size.
 const MAX_OPS_PER_SYNC = 400;
 
-// Fixed width for the Outreach column so wrapped retention messages have room
-// to breathe instead of autofitting to a single long line. Office.js column
-// widths are in points; 290px ≈ 217.5pt at 96 DPI.
-const OUTREACH_COLUMN_WIDTH = 217.5;
+// Fixed output-column widths. Office.js column widths are in points; pixels
+// convert at ~0.75pt/px (96 DPI). Keyed by normalized column name (lowercased,
+// whitespace removed) so both settings names and raw master headers match.
+const FIXED_COLUMN_WIDTHS = {
+    outreach: 217.5,            // 290px (also wrapped, see WRAP_COLUMN_NAMES)
+    assigned: 57,              // 76px
+    programversion: 267,       // 356px
+    missingassignments: 51.75, // 69px
+    grade: 69,                 // 92px (Last Course Grade — settings name is "Grade")
+    lastcoursegrade: 69,       // 92px (when shown under its raw master header)
+    nextassignmentdue: 92.25,  // 123px
+};
+const WRAP_COLUMN_NAMES = new Set(['outreach']);
+const normalizeColName = (name) => String(name || '').toLowerCase().replace(/\s+/g, '');
 
 /**
  * Helper to convert Excel serial date to MM-DD-YY string
@@ -872,6 +882,19 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 }
             }
 
+            // Pin specific output columns to fixed widths (and wrap where configured)
+            // after autofit, so messages wrap and key columns keep a consistent size.
+            const applyFixedColumnWidths = (sheet) => {
+                outputColumns.forEach((colConfig, idx) => {
+                    const key = normalizeColName(colConfig.name);
+                    const width = FIXED_COLUMN_WIDTHS[key];
+                    if (width == null) return;
+                    const col = sheet.getRangeByIndexes(0, idx, 1, 1).getEntireColumn();
+                    col.format.columnWidth = width;
+                    if (WRAP_COLUMN_NAMES.has(key)) col.format.wrapText = true;
+                });
+            };
+
             // --- Detect Multi-Campus Mode ---
             let isMultiCampus = false;
             let campusList = [];
@@ -1197,13 +1220,8 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     // Autofit & hide columns
                     newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
 
-                    // Pin the Outreach column to a fixed width with text wrapping so
-                    // long retention messages wrap instead of stretching the column.
-                    if (outreachColIndex !== -1) {
-                        const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
-                        outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
-                        outreachCol.format.wrapText = true;
-                    }
+                    // Pin configured columns to fixed widths (Outreach also wraps) after autofit.
+                    applyFixedColumnWidths(newSheet);
                     await context.sync();
 
                     // Batch hidden column operations to avoid queue overflow
@@ -1612,13 +1630,8 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 // Autofit
                 newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
 
-                // Pin the Outreach column to a fixed width with text wrapping so
-                // long retention messages wrap instead of stretching the column.
-                if (outreachColIndex !== -1) {
-                    const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
-                    outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
-                    outreachCol.format.wrapText = true;
-                }
+                // Pin configured columns to fixed widths (Outreach also wraps) after autofit.
+                applyFixedColumnWidths(newSheet);
 
                 // --- Apply hidden columns (must be LAST after autofit) ---
                 const HIDE_BATCH = 50;
