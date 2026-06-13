@@ -29,6 +29,11 @@ const FORMAT_BATCH_SIZE = 100;
 // size.
 const MAX_OPS_PER_SYNC = 400;
 
+// Fixed width for the Outreach column so wrapped retention messages have room
+// to breathe instead of autofitting to a single long line. Office.js column
+// widths are in points; 290px ≈ 217.5pt at 96 DPI.
+const OUTREACH_COLUMN_WIDTH = 217.5;
+
 /**
  * Helper to convert Excel serial date to MM-DD-YY string
  */
@@ -164,11 +169,13 @@ function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dnc
         if (triggersOutreach) {
             // Use the DNC comment's own text as the outreach message. But when that
             // comment is a quote, don't dump the whole quote in — just flag it.
+            // Append " - <author>" so we know who left the DNC note.
             const dncMsg = lookupTagEntry(dncMessageMap, sIds);
+            const author = (dncMsg && dncMsg.createdBy) ? ` - ${dncMsg.createdBy}` : '';
             if (dncMsg && dncMsg.message && !dncMsg.isQuote) {
-                return dncMsg.message;
+                return `${dncMsg.message}${author}`;
             }
-            return "Do not contact";
+            return `Do not contact${author}`;
         }
     }
 
@@ -909,6 +916,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                         });
                         const hTagIdx = hHeaders.indexOf('tag');
                         const hCommentIdx = hHeaders.indexOf('comment');
+                        const hCreatedByIdx = hHeaders.indexOf('created by');
 
                         if (hIdIndices.length > 0 && hTagIdx !== -1) {
                             const todayTime = new Date().setHours(0,0,0,0);
@@ -940,9 +948,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                                     if (isQualifyingDnc) {
                                         const isQuote = rowTags.includes('quote');
                                         const message = hCommentIdx !== -1 ? String(hValues[i][hCommentIdx] || '').trim() : '';
+                                        const createdBy = hCreatedByIdx !== -1 ? String(hValues[i][hCreatedByIdx] || '').trim() : '';
                                         for (const hid of hids) {
                                             if (!dncMessageMap.has(hid)) {
-                                                dncMessageMap.set(hid, { message, isQuote });
+                                                dncMessageMap.set(hid, { message, isQuote, createdBy });
                                             }
                                         }
                                     }
@@ -1186,6 +1195,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                     // Autofit & hide columns
                     newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
+
+                    // Pin the Outreach column to a fixed width with text wrapping so
+                    // long retention messages wrap instead of stretching the column.
+                    if (outreachColIndex !== -1) {
+                        const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
+                        outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
+                        outreachCol.format.wrapText = true;
+                    }
                     await context.sync();
 
                     // Batch hidden column operations to avoid queue overflow
@@ -1269,6 +1286,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                         });
                         const hTagIdx = hHeaders.indexOf('tag');
                         const hCommentIdx = hHeaders.indexOf('comment');
+                        const hCreatedByIdx = hHeaders.indexOf('created by');
 
                         if (hIdIndices.length > 0 && hTagIdx !== -1) {
                             const todayTime = new Date().setHours(0,0,0,0);
@@ -1300,9 +1318,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                                     if (isQualifyingDnc) {
                                         const isQuote = rowTags.includes('quote');
                                         const message = hCommentIdx !== -1 ? String(hValues[i][hCommentIdx] || '').trim() : '';
+                                        const createdBy = hCreatedByIdx !== -1 ? String(hValues[i][hCreatedByIdx] || '').trim() : '';
                                         for (const hid of hids) {
                                             if (!dncMessageMap.has(hid)) {
-                                                dncMessageMap.set(hid, { message, isQuote });
+                                                dncMessageMap.set(hid, { message, isQuote, createdBy });
                                             }
                                         }
                                     }
@@ -1590,6 +1609,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                 // Autofit
                 newSheet.getUsedRange().getEntireColumn().format.autofitColumns();
+
+                // Pin the Outreach column to a fixed width with text wrapping so
+                // long retention messages wrap instead of stretching the column.
+                if (outreachColIndex !== -1) {
+                    const outreachCol = newSheet.getRangeByIndexes(0, outreachColIndex, 1, 1).getEntireColumn();
+                    outreachCol.format.columnWidth = OUTREACH_COLUMN_WIDTH;
+                    outreachCol.format.wrapText = true;
+                }
 
                 // --- Apply hidden columns (must be LAST after autofit) ---
                 const HIDE_BATCH = 50;
