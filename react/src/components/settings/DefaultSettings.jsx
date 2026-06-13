@@ -82,20 +82,39 @@ export const defaultWorkbookSettings = [
 		description: 'Whether to include the Do Not Contact students.'
 	},
 	{
+		id: 'advancedLda',
+		label: 'Advanced',
+		type: 'advanced',
+		defaultValue: null,
+		section: 'Create LDA',
+		description: 'Expanded DNC messaging and column width options.'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
 		id: 'expandedDNC',
 		label: 'Expanded DNC',
 		type: 'boolean',
 		defaultValue: false,
-		section: 'Create LDA',
+		hidden: true,
 		description: 'Fill the Outreach column with the DNC comment text and who left it, instead of a flat "Do not contact". Off restores the original DNC behavior.'
 	},
 	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
 		id: 'compactColumnWidth',
 		label: 'Compact Column Width',
 		type: 'boolean',
 		defaultValue: true,
-		section: 'Create LDA',
+		hidden: true,
 		description: 'Pin key columns (Outreach, ProgramVersion, etc.) to fixed widths and wrap the Outreach text. Off autosizes columns like before.'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'authorFormat',
+		label: 'Author',
+		type: 'string',
+		defaultValue: 'initials',
+		hidden: true,
+		description: 'How the note author appears in outreach messages: full name (Victor Blanco) or initials (vb).'
 	},
 	{
 		id: 'powerAutomateUrl',

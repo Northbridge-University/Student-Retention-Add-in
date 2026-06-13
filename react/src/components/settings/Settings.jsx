@@ -7,6 +7,7 @@ import WorkbookSettingsModal from './WorkbookSettingsModal'; // <-- ADDED
 import PowerAutomateConfigModal from './PowerAutomateConfigModal'; // <-- ADDED: Power Automate config modal
 import TemplateImportExportModal from './TemplateImportExportModal'; // <-- ADDED: Template import/export modal
 import CustomParamImportExportModal from './CustomParamImportExportModal'; // <-- ADDED: Custom parameters import/export modal
+import AdvancedLDAModal from './AdvancedLDAModal'; // <-- ADDED: Create LDA advanced options modal
 import LicenseChecker from '../utility/LicenseChecker'; // <-- License checker (requires Graph API)
 import UserInfoDisplay from '../utility/UserInfoDisplay'; // <-- User info from token (no API needed)
 import About from '../about/About'; // <-- ADDED: Import About component for Help tab
@@ -220,6 +221,9 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 
 	// Custom parameters import/export modal state
 	const [customParamModalOpen, setCustomParamModalOpen] = useState(false);
+
+	// Create LDA "Advanced" options modal state
+	const [advancedModalOpen, setAdvancedModalOpen] = useState(false);
 
 	// Download CSV state
 	const [downloadingCsv, setDownloadingCsv] = useState(false);
@@ -615,6 +619,9 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 		const sections = {};
 		const unsectioned = [];
 		settings.forEach(s => {
+			// Hidden settings still seed defaults/persist but aren't rendered as rows
+			// (e.g. surfaced through a dedicated modal instead).
+			if (s.hidden) return;
 			if (s.section) {
 				(sections[s.section] ||= []).push(s);
 			} else {
@@ -779,6 +786,18 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 										onClick={() => setCustomParamModalOpen(true)}
 										style={{ padding: '6px 10px', borderRadius: 6, background: '#f3f4f6', border: '1px solid #e6e7eb', cursor: 'pointer' }}
 										aria-label={`Configure custom parameters import/export`}
+									>
+										Configure
+									</button>
+								);
+							}
+
+							if (setting.type === 'advanced') {
+								return (
+									<button
+										onClick={() => setAdvancedModalOpen(true)}
+										style={{ padding: '6px 10px', borderRadius: 6, background: '#f3f4f6', border: '1px solid #e6e7eb', cursor: 'pointer' }}
+										aria-label={`Configure advanced Create LDA options`}
 									>
 										Configure
 									</button>
@@ -1150,6 +1169,18 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 
 			{/* Custom Parameters import/export modal */}
 			<CustomParamImportExportModal isOpen={customParamModalOpen} onClose={() => setCustomParamModalOpen(false)} />
+
+			{/* Create LDA Advanced options modal */}
+			<AdvancedLDAModal
+				isOpen={advancedModalOpen}
+				onClose={() => setAdvancedModalOpen(false)}
+				values={{
+					expandedDNC: workbookSettingsState.expandedDNC ?? false,
+					compactColumnWidth: workbookSettingsState.compactColumnWidth ?? true,
+					authorFormat: workbookSettingsState.authorFormat ?? 'initials',
+				}}
+				onChange={updateWorkbookSetting}
+			/>
 		</div>
 	);
 };
