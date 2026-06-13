@@ -16,6 +16,26 @@ const ADVANCED_TOGGLES = [
   }
 ];
 
+function Segmented({ value, onChange, options, label }) {
+  return (
+    <div className="relative flex bg-slate-200 rounded-full p-0.5" role="group" aria-label={label}>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          aria-pressed={value === opt.value}
+          className={`relative z-10 px-3 py-1 text-xs font-medium rounded-full transition-colors duration-200 ${
+            value === opt.value ? 'bg-[#145F82] text-white' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Toggle({ checked, onChange, label }) {
   return (
     <button
@@ -76,6 +96,24 @@ export default function AdvancedLDAModal({ isOpen, onClose, values, onChange }) 
               />
             </div>
           ))}
+
+          <div className="flex items-start justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-slate-700">Author</div>
+              <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                How the note author appears in outreach messages, e.g. "Victor Blanco" or "vb".
+              </p>
+            </div>
+            <Segmented
+              label="Author format"
+              value={values.authorFormat === 'full' ? 'full' : 'initials'}
+              onChange={(v) => onChange('authorFormat', v)}
+              options={[
+                { value: 'full', label: 'Full Name' },
+                { value: 'initials', label: 'Initials' },
+              ]}
+            />
+          </div>
         </div>
 
         <div className="px-4 pb-4 flex justify-end">

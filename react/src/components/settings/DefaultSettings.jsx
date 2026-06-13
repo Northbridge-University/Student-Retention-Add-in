@@ -108,6 +108,15 @@ export const defaultWorkbookSettings = [
 		description: 'Pin key columns (Outreach, ProgramVersion, etc.) to fixed widths and wrap the Outreach text. Off autosizes columns like before.'
 	},
 	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'authorFormat',
+		label: 'Author',
+		type: 'string',
+		defaultValue: 'initials',
+		hidden: true,
+		description: 'How the note author appears in outreach messages: full name (Victor Blanco) or initials (vb).'
+	},
+	{
 		id: 'powerAutomateUrl',
 		label: 'Power Automate',
 		type: 'powerautomate',

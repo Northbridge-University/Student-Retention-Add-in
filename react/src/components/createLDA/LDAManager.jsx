@@ -33,6 +33,7 @@ export default function CreateLDAManager({ onReady } = {}) {
     includeNextAssignmentDue: true,
     expandedDNC: false,
     compactColumnWidth: true,
+    authorFormat: 'initials',
     sheetNameMode: 'date',
     advisorAssignment: {
       enabled: false,
@@ -107,6 +108,7 @@ export default function CreateLDAManager({ onReady } = {}) {
           includeNextAssignmentDue: (wb.includeNextAssignmentDue !== undefined) ? !!wb.includeNextAssignmentDue : prev.includeNextAssignmentDue,
           expandedDNC: (wb.expandedDNC !== undefined) ? !!wb.expandedDNC : prev.expandedDNC,
           compactColumnWidth: (wb.compactColumnWidth !== undefined) ? !!wb.compactColumnWidth : prev.compactColumnWidth,
+          authorFormat: (wb.authorFormat === 'initials' || wb.authorFormat === 'full') ? wb.authorFormat : prev.authorFormat,
           sheetNameMode: wb.sheetNameMode || prev.sheetNameMode,
           advisorAssignment: wb.advisorAssignment || prev.advisorAssignment,
         }));

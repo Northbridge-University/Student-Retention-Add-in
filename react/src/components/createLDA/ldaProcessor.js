@@ -37,8 +37,8 @@ const FIXED_COLUMN_WIDTHS = {
     assigned: 57,              // 76px
     programversion: 267,       // 356px
     missingassignments: 51.75, // 69px
-    grade: 69,                 // 92px (Last Course Grade — settings name is "Grade")
-    lastcoursegrade: 69,       // 92px (when shown under its raw master header)
+    grade: 45.75,              // 61px (Last Course Grade — settings name is "Grade")
+    lastcoursegrade: 45.75,    // 61px (when shown under its raw master header)
     nextassignmentdue: 92.25,  // 123px
 };
 const WRAP_COLUMN_NAMES = new Set(['outreach']);
@@ -144,6 +144,19 @@ function formatFriendlyDate(value) {
     return `${monthNames[targetDate.getMonth()]} ${day}${suffix}`;
 }
 
+// Format a note author for an outreach message. 'initials' collapses a name to
+// its lowercase initials (e.g. "Victor Blanco" -> "vb"); anything else returns
+// the trimmed full name. Returns the " - <author>" suffix, or '' when blank.
+function formatAuthorSuffix(name, authorFormat) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return '';
+    if (authorFormat === 'initials') {
+        const initials = trimmed.split(/\s+/).map(w => w[0]).join('').toLowerCase();
+        if (initials) return ` - ${initials}`;
+    }
+    return ` - ${trimmed}`;
+}
+
 // Look up a tag map under any of the candidate IDs (master rows may carry
 // both a SyStudentId and a Student Number, and history rows may have been
 // keyed under either). Returns the first matching entry, or null.
@@ -166,7 +179,7 @@ function lookupTagEntry(map, sIds) {
  * @param {Map} dncMessageMap - Map of ID -> { message, isQuote } for the qualifying DNC comment
  * @returns {string|null} - The formatted message or null
  */
-function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, includeNextAssignmentDue = true, expandedDNC = false) {
+function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, includeNextAssignmentDue = true, expandedDNC = false, authorFormat = 'initials') {
     // Priority 1: Explicit DNC (Highest Priority - Stop everything)
     const dncTag = lookupTagEntry(dncMap, sIds);
     if (dncTag) {
@@ -180,7 +193,7 @@ function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dnc
             const triggersOutreach = individualTags.some(tag => tag === 'dnc' || tag === 'dnc - phone');
             if (triggersOutreach) {
                 const dncMsg = lookupTagEntry(dncMessageMap, sIds);
-                const author = (dncMsg && dncMsg.createdBy) ? ` - ${dncMsg.createdBy}` : '';
+                const author = formatAuthorSuffix(dncMsg && dncMsg.createdBy, authorFormat);
                 if (dncMsg && dncMsg.message && !dncMsg.isQuote) {
                     return `${dncMsg.message}${author}`;
                 }
@@ -212,7 +225,7 @@ function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dnc
             : (day === 2 || day === 22) ? 'nd'
             : (day === 3 || day === 23) ? 'rd' : 'th';
         const friendlyDate = `${monthNames[ldaObj.date.getMonth()]} ${day}${suffix}`;
-        const author = ldaObj.createdBy ? ` - ${ldaObj.createdBy}` : '';
+        const author = formatAuthorSuffix(ldaObj.createdBy, authorFormat);
         return `Student will engage on ${friendlyDate}${author}`;
     }
 
@@ -279,6 +292,8 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
             // "Do not contact") and compact/fixed column widths (off = autosize only).
             expandedDNC: userOverrides.expandedDNC ?? false,
             compactColumnWidth: userOverrides.compactColumnWidth ?? true,
+            // 'initials' = lowercase initials (e.g. "vb"), 'full' = full name.
+            authorFormat: userOverrides.authorFormat ?? 'initials',
             sheetNameMode: userOverrides.sheetNameMode ?? 'date',
             columns: workbookSettings.columns,
             advisorAssignment: userOverrides.advisorAssignment ?? { enabled: false, advisors: [] }
@@ -1056,7 +1071,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const sIds = [sId, sNumber].filter((v, i, a) => v && a.indexOf(v) === i);
                     const missingVal = (missingIdx !== -1) ? rowObj.values[missingIdx] : null;
                     const nextAssignmentDueVal = (nextAssignmentDueIdx !== -1) ? rowObj.values[nextAssignmentDueIdx] : null;
-                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC);
+                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC, settings.authorFormat);
                     const isGradeBookFlag = retentionMsg && retentionMsg.includes("Please check their Grade Book");
                     const isRetentionActive = !!retentionMsg && !isGradeBookFlag;
                     const dncTagText = lookupTagEntry(dncMap, sIds);
@@ -1440,7 +1455,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const nextAssignmentDueVal = (nextAssignmentDueIdx !== -1) ? rowObj.values[nextAssignmentDueIdx] : null;
 
                     // 2. Generate Retention Message using helper
-                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC);
+                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC, settings.authorFormat);
                     const dncTagText = lookupTagEntry(dncMap, sIds);
                     const dncTagsArr = dncTagText ? dncTagText.split(',').map(t => t.trim()) : [];
                     // Only a general "DNC" highlights the row red — even when the outreach

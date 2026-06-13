@@ -1177,6 +1177,7 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 				values={{
 					expandedDNC: workbookSettingsState.expandedDNC ?? false,
 					compactColumnWidth: workbookSettingsState.compactColumnWidth ?? true,
+					authorFormat: workbookSettingsState.authorFormat ?? 'initials',
 				}}
 				onChange={updateWorkbookSetting}
 			/>
