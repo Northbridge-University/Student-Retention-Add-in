@@ -1059,10 +1059,13 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const isGradeBookFlag = retentionMsg && retentionMsg.includes("Please check their Grade Book");
                     const isRetentionActive = !!retentionMsg && !isGradeBookFlag;
                     const dncTagText = lookupTagEntry(dncMap, sIds);
-                    // Only a general "DNC" highlights the whole row red — even when the
-                    // outreach message is the student's own comment text. "DNC - Phone"
-                    // gets its outreach message but is left as a normal (orange) row.
-                    const isGeneralDnc = !!dncTagText && dncTagText.split(',').map(t => t.trim()).includes('dnc');
+                    const dncTagsArr = dncTagText ? dncTagText.split(',').map(t => t.trim()) : [];
+                    // Only a general "DNC" highlights the row red — even when the outreach
+                    // message is the student's own comment text.
+                    const isGeneralDnc = dncTagsArr.includes('dnc');
+                    // Expanded DNC: a "DNC - Phone" (without a general DNC) still writes its
+                    // outreach message, but the row gets no highlight at all.
+                    const suppressRetentionHighlight = settings.expandedDNC && dncTagsArr.includes('dnc - phone') && !isGeneralDnc;
                     const isNextAssignmentDue = retentionMsg && retentionMsg.startsWith("Student's next assignment is due");
 
                     // --- Course Start Baseline Check ---
@@ -1090,7 +1093,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda";
                     }
-                    if (isRetentionActive && outreachColIndex === -1) {
+                    if (isRetentionActive && !suppressRetentionHighlight && outreachColIndex === -1) {
                         rowColor = partialRowColor;
                     }
                     outputColumns.forEach((colConfig, colOutIdx) => {
@@ -1103,7 +1106,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             form = `=HYPERLINK("${val}", "Link")`;
                             val = "Link";
                         }
-                        if (isRetentionActive && outreachColIndex !== -1 && colOutIdx <= outreachColIndex) {
+                        if (isRetentionActive && !suppressRetentionHighlight && outreachColIndex !== -1 && colOutIdx <= outreachColIndex) {
                             cellHighlights.push({ colIndex: colOutIdx, color: partialRowColor });
                         }
                         if (masterIdx !== -1 && val) {
@@ -1438,10 +1441,13 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     // 2. Generate Retention Message using helper
                     const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC);
                     const dncTagText = lookupTagEntry(dncMap, sIds);
-                    // Only a general "DNC" highlights the whole row red — even when the
-                    // outreach message is the student's own comment text. "DNC - Phone"
-                    // gets its outreach message but is left as a normal (orange) row.
-                    const isGeneralDnc = !!dncTagText && dncTagText.split(',').map(t => t.trim()).includes('dnc');
+                    const dncTagsArr = dncTagText ? dncTagText.split(',').map(t => t.trim()) : [];
+                    // Only a general "DNC" highlights the row red — even when the outreach
+                    // message is the student's own comment text.
+                    const isGeneralDnc = dncTagsArr.includes('dnc');
+                    // Expanded DNC: a "DNC - Phone" (without a general DNC) still writes its
+                    // outreach message, but the row gets no highlight at all.
+                    const suppressRetentionHighlight = settings.expandedDNC && dncTagsArr.includes('dnc - phone') && !isGeneralDnc;
 
                     // 2b. Course Start Baseline Check
                     let courseStartMsg = null;
@@ -1477,7 +1483,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     }
 
                     // Fallback row color if Outreach column is missing
-                    if (isRetentionActive && outreachColIndex === -1) {
+                    if (isRetentionActive && !suppressRetentionHighlight && outreachColIndex === -1) {
                          rowColor = partialRowColor;
                     }
 
@@ -1495,7 +1501,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                         // --- Apply Retention Highlight (Partial Row) ---
                         // Only apply up to outreach column if it exists and this column is within range
-                        if (isRetentionActive && outreachColIndex !== -1 && colOutIdx <= outreachColIndex) {
+                        if (isRetentionActive && !suppressRetentionHighlight && outreachColIndex !== -1 && colOutIdx <= outreachColIndex) {
                             cellHighlights.push({
                                 colIndex: colOutIdx,
                                 color: partialRowColor
