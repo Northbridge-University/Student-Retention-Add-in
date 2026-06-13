@@ -148,18 +148,26 @@ function lookupTagEntry(map, sIds) {
  * @param {number} missingVal - The value from "Missing Assignments" column
  * @param {string} tableContext - 'LDA_Table' or 'Failing_Table'
  * @param {Map} dncMap - Map of ID -> Tag Text
+ * @param {Map} dncMessageMap - Map of ID -> { message, isQuote } for the qualifying DNC comment
  * @returns {string|null} - The formatted message or null
  */
-function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, includeNextAssignmentDue = true) {
+function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, includeNextAssignmentDue = true) {
     // Priority 1: Explicit DNC (Highest Priority - Stop everything)
+    // Only a general "DNC" or "DNC - Phone" tag populates the Outreach column.
+    // Other variants ("DNC - Email", "DNC - Other Phone") write nothing here
+    // (their phone columns are still struck through downstream).
     const dncTag = lookupTagEntry(dncMap, sIds);
     if (dncTag) {
         // Split comma-separated tags and check each individually
         const individualTags = dncTag.split(',').map(t => t.trim());
-        const hasExcludableDnc = individualTags.some(tag =>
-            tag.includes('dnc') && tag !== 'dnc - phone' && tag !== 'dnc - other phone'
-        );
-        if (hasExcludableDnc) {
+        const triggersOutreach = individualTags.some(tag => tag === 'dnc' || tag === 'dnc - phone');
+        if (triggersOutreach) {
+            // Use the DNC comment's own text as the outreach message. But when that
+            // comment is a quote, don't dump the whole quote in — just flag it.
+            const dncMsg = lookupTagEntry(dncMessageMap, sIds);
+            if (dncMsg && dncMsg.message && !dncMsg.isQuote) {
+                return dncMsg.message;
+            }
             return "Do not contact";
         }
     }
@@ -882,6 +890,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 if (onProgress) onProgress('tags', 'active');
 
                 const dncMap = new Map();
+                const dncMessageMap = new Map();
                 const ldaFollowUpMap = new Map();
 
                 if (historyData && studentIdIdx !== -1) {
@@ -899,6 +908,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             }
                         });
                         const hTagIdx = hHeaders.indexOf('tag');
+                        const hCommentIdx = hHeaders.indexOf('comment');
 
                         if (hIdIndices.length > 0 && hTagIdx !== -1) {
                             const todayTime = new Date().setHours(0,0,0,0);
@@ -919,6 +929,22 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                                     // Accumulate DNC tags so multiple entries (e.g. "DNC - Phone" and "DNC - Other Phone") are preserved
                                     for (const hid of hids) {
                                         dncMap.set(hid, dncMap.has(hid) ? dncMap.get(hid) + ', ' + htagLower : htagLower);
+                                    }
+
+                                    // Capture the comment text for the most recent qualifying DNC entry
+                                    // (a bare "DNC" or "DNC - Phone" tag). That text becomes the Outreach
+                                    // message — unless the comment is a Quote, in which case we only flag it.
+                                    // Rows are walked newest-first, so the first match per student wins.
+                                    const rowTags = htagLower.split(',').map(t => t.trim());
+                                    const isQualifyingDnc = rowTags.includes('dnc') || rowTags.includes('dnc - phone');
+                                    if (isQualifyingDnc) {
+                                        const isQuote = rowTags.includes('quote');
+                                        const message = hCommentIdx !== -1 ? String(hValues[i][hCommentIdx] || '').trim() : '';
+                                        for (const hid of hids) {
+                                            if (!dncMessageMap.has(hid)) {
+                                                dncMessageMap.set(hid, { message, isQuote });
+                                            }
+                                        }
                                     }
                                 }
 
@@ -985,10 +1011,13 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const sIds = [sId, sNumber].filter((v, i, a) => v && a.indexOf(v) === i);
                     const missingVal = (missingIdx !== -1) ? rowObj.values[missingIdx] : null;
                     const nextAssignmentDueVal = (nextAssignmentDueIdx !== -1) ? rowObj.values[nextAssignmentDueIdx] : null;
-                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue);
+                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue);
                     const isGradeBookFlag = retentionMsg && retentionMsg.includes("Please check their Grade Book");
                     const isRetentionActive = !!retentionMsg && !isGradeBookFlag;
                     const dncTagText = lookupTagEntry(dncMap, sIds);
+                    // A "DNC" / "DNC - Phone" student stays red even when the outreach
+                    // message is the student's own comment text rather than "Do not contact".
+                    const isDncOutreach = !!dncTagText && dncTagText.split(',').map(t => t.trim()).some(t => t === 'dnc' || t === 'dnc - phone');
                     const isNextAssignmentDue = retentionMsg && retentionMsg.startsWith("Student's next assignment is due");
 
                     // --- Course Start Baseline Check ---
@@ -1011,7 +1040,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     }
 
                     let partialRowColor = "#FFEDD5";
-                    if (retentionMsg === "Do not contact") {
+                    if (retentionMsg === "Do not contact" || isDncOutreach) {
                         partialRowColor = "#FFC7CE";
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda";
@@ -1221,6 +1250,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 if (onProgress) onProgress('tags', 'active');
 
                 const dncMap = new Map();
+                const dncMessageMap = new Map();
                 const ldaFollowUpMap = new Map();
 
                 if (historyData && studentIdIdx !== -1) {
@@ -1238,6 +1268,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             }
                         });
                         const hTagIdx = hHeaders.indexOf('tag');
+                        const hCommentIdx = hHeaders.indexOf('comment');
 
                         if (hIdIndices.length > 0 && hTagIdx !== -1) {
                             const todayTime = new Date().setHours(0,0,0,0);
@@ -1258,6 +1289,22 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                                     // Accumulate DNC tags so multiple entries (e.g. "DNC - Phone" and "DNC - Other Phone") are preserved
                                     for (const hid of hids) {
                                         dncMap.set(hid, dncMap.has(hid) ? dncMap.get(hid) + ', ' + htagLower : htagLower);
+                                    }
+
+                                    // Capture the comment text for the most recent qualifying DNC entry
+                                    // (a bare "DNC" or "DNC - Phone" tag). That text becomes the Outreach
+                                    // message — unless the comment is a Quote, in which case we only flag it.
+                                    // Rows are walked newest-first, so the first match per student wins.
+                                    const rowTags = htagLower.split(',').map(t => t.trim());
+                                    const isQualifyingDnc = rowTags.includes('dnc') || rowTags.includes('dnc - phone');
+                                    if (isQualifyingDnc) {
+                                        const isQuote = rowTags.includes('quote');
+                                        const message = hCommentIdx !== -1 ? String(hValues[i][hCommentIdx] || '').trim() : '';
+                                        for (const hid of hids) {
+                                            if (!dncMessageMap.has(hid)) {
+                                                dncMessageMap.set(hid, { message, isQuote });
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1339,8 +1386,11 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const nextAssignmentDueVal = (nextAssignmentDueIdx !== -1) ? rowObj.values[nextAssignmentDueIdx] : null;
 
                     // 2. Generate Retention Message using helper
-                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue);
+                    const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue);
                     const dncTagText = lookupTagEntry(dncMap, sIds);
+                    // A "DNC" / "DNC - Phone" student stays red even when the outreach
+                    // message is the student's own comment text rather than "Do not contact".
+                    const isDncOutreach = !!dncTagText && dncTagText.split(',').map(t => t.trim()).some(t => t === 'dnc' || t === 'dnc - phone');
 
                     // 2b. Course Start Baseline Check
                     let courseStartMsg = null;
@@ -1369,7 +1419,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                     // Determine Row/Partial Color:
                     let partialRowColor = "#FFEDD5"; // Orange Default
-                    if (retentionMsg === "Do not contact") {
+                    if (retentionMsg === "Do not contact" || isDncOutreach) {
                         partialRowColor = "#FFC7CE"; // Red for DNC
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda"; // Light green for zero missing + next assignment due
