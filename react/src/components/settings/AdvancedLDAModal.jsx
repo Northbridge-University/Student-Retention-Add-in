@@ -4,16 +4,8 @@ import { X } from 'lucide-react';
 // Toggles surfaced inside the Create LDA "Advanced" modal. Each id maps to a
 // workbookSettings key the LDA processor reads (see DefaultSettings.jsx / ldaProcessor.js).
 const ADVANCED_TOGGLES = [
-  {
-    id: 'expandedDNC',
-    label: 'Expanded DNC',
-    description: 'Fill the Outreach column with the DNC comment text and who left it, instead of a flat "Do not contact". Off restores the original DNC behavior.'
-  },
-  {
-    id: 'compactColumnWidth',
-    label: 'Compact Column Width',
-    description: 'Pin key columns (Outreach, ProgramVersion, etc.) to fixed widths and wrap the Outreach text. Off autosizes columns like before.'
-  }
+  { id: 'expandedDNC', label: 'Expanded DNC' },
+  { id: 'compactColumnWidth', label: 'Compact Column Width' }
 ];
 
 function Segmented({ value, onChange, options, label }) {
@@ -36,13 +28,10 @@ function Segmented({ value, onChange, options, label }) {
   );
 }
 
-function ColorRow({ label, description, value, onChange }) {
+function ColorRow({ label, value, onChange }) {
   return (
-    <div className="flex items-start justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100">
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-slate-700">{label}</div>
-        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{description}</p>
-      </div>
+    <div className="flex items-center justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100">
+      <div className="text-sm font-medium text-slate-700 min-w-0">{label}</div>
       <div className="flex items-center gap-2 shrink-0">
         <span className="text-[11px] font-mono text-slate-400 uppercase">{value}</span>
         <input
@@ -104,12 +93,9 @@ export default function AdvancedLDAModal({ isOpen, onClose, values, onChange }) 
           {ADVANCED_TOGGLES.map((t) => (
             <div
               key={t.id}
-              className="flex items-start justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100"
+              className="flex items-center justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100"
             >
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-slate-700">{t.label}</div>
-                <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{t.description}</p>
-              </div>
+              <div className="text-sm font-medium text-slate-700 min-w-0">{t.label}</div>
               <Toggle
                 checked={!!values[t.id]}
                 onChange={(v) => onChange(t.id, v)}
@@ -118,13 +104,8 @@ export default function AdvancedLDAModal({ isOpen, onClose, values, onChange }) 
             </div>
           ))}
 
-          <div className="flex items-start justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100">
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-slate-700">Author</div>
-              <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
-                How the note author appears in outreach messages, e.g. "Victor Blanco" or "vb".
-              </p>
-            </div>
+          <div className="flex items-center justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100">
+            <div className="text-sm font-medium text-slate-700 min-w-0">Author</div>
             <Segmented
               label="Author format"
               value={values.authorFormat === 'full' ? 'full' : 'initials'}
@@ -138,13 +119,11 @@ export default function AdvancedLDAModal({ isOpen, onClose, values, onChange }) 
 
           <ColorRow
             label="LDA Tag color"
-            description="Highlight color for LDA follow-up comments (default matches the Contacted yellow)."
             value={values.ldaTagColor || '#FFFF00'}
             onChange={(v) => onChange('ldaTagColor', v)}
           />
           <ColorRow
             label="DNC color"
-            description="Fill color for DNC outreach comments and the phone strikethrough."
             value={values.dncColor || '#f2bdbd'}
             onChange={(v) => onChange('dncColor', v)}
           />
