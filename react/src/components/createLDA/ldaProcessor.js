@@ -294,6 +294,9 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
             compactColumnWidth: userOverrides.compactColumnWidth ?? true,
             // 'initials' = lowercase initials (e.g. "vb"), 'full' = full name.
             authorFormat: userOverrides.authorFormat ?? 'initials',
+            // Highlight colors for the LDA-tag and DNC outreach comments.
+            ldaTagColor: userOverrides.ldaTagColor ?? '#FFFF00',
+            dncColor: userOverrides.dncColor ?? '#f2bdbd',
             sheetNameMode: userOverrides.sheetNameMode ?? 'date',
             columns: workbookSettings.columns,
             advisorAssignment: userOverrides.advisorAssignment ?? { enabled: false, advisors: [] }
@@ -1076,12 +1079,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const isRetentionActive = !!retentionMsg && !isGradeBookFlag;
                     const dncTagText = lookupTagEntry(dncMap, sIds);
                     const dncTagsArr = dncTagText ? dncTagText.split(',').map(t => t.trim()) : [];
-                    // Only a general "DNC" highlights the row red — even when the outreach
-                    // message is the student's own comment text.
                     const isGeneralDnc = dncTagsArr.includes('dnc');
-                    // Expanded DNC: a "DNC - Phone" (without a general DNC) still writes its
-                    // outreach message, but the row gets no highlight at all.
-                    const suppressRetentionHighlight = settings.expandedDNC && dncTagsArr.includes('dnc - phone') && !isGeneralDnc;
+                    // Expanded DNC: a "DNC" or "DNC - Phone" writes its outreach message but gets
+                    // no row highlight — only the Outreach cell is filled (settings.dncColor),
+                    // and its phone strikethrough uses the same color with default text.
+                    const isDncOutreach = settings.expandedDNC && (isGeneralDnc || dncTagsArr.includes('dnc - phone'));
+                    const suppressRetentionHighlight = isDncOutreach;
+                    // LDA-tag follow-up rows highlight in settings.ldaTagColor (default yellow).
+                    const isLdaFollowUp = !!retentionMsg && retentionMsg.startsWith('Student will engage on');
                     const isNextAssignmentDue = retentionMsg && retentionMsg.startsWith("Student's next assignment is due");
 
                     // --- Course Start Baseline Check ---
@@ -1104,8 +1109,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     }
 
                     let partialRowColor = "#FFEDD5";
-                    if (retentionMsg === "Do not contact" || (settings.expandedDNC && isGeneralDnc)) {
+                    if (retentionMsg === "Do not contact") {
                         partialRowColor = "#FFC7CE";
+                    } else if (isLdaFollowUp) {
+                        partialRowColor = settings.ldaTagColor;
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda";
                     }
@@ -1150,6 +1157,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             if (courseStartMsg) {
                                 comments.push({ colIndex: colOutIdx, text: courseStartMsg });
                             }
+                            // Expanded DNC fills only the Outreach cell (no row highlight).
+                            if (isDncOutreach) {
+                                cellHighlights.push({ colIndex: colOutIdx, color: settings.dncColor });
+                            }
                         }
                         // --- DNC Highlight (Highest Priority - Phone Columns) ---
                         // Only strikethrough the specific phone column matching the DNC type.
@@ -1159,12 +1170,16 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             const hasGeneralDnc = dncTags.some(t => t === 'dnc');
                             const hasPhoneDnc = dncTags.some(t => t === 'dnc - phone');
                             const hasOtherPhoneDnc = dncTags.some(t => t === 'dnc - other phone');
+                            // Expanded DNC: strikethrough fill follows the DNC color with default
+                            // text. Legacy keeps the original red fill + dark-red text.
+                            const strikeColor = settings.expandedDNC ? settings.dncColor : "#FFC7CE";
+                            const strikeFontColor = settings.expandedDNC ? null : "#9C0006";
 
                             if (colConfig.name === 'Phone' && (hasGeneralDnc || hasPhoneDnc)) {
-                                cellHighlights.push({ colIndex: colOutIdx, color: "#FFC7CE", strikethrough: true });
+                                cellHighlights.push({ colIndex: colOutIdx, color: strikeColor, strikethrough: true, fontColor: strikeFontColor });
                             }
                             if (colConfig.name === 'Other Phone' && (hasGeneralDnc || hasOtherPhoneDnc)) {
-                                cellHighlights.push({ colIndex: colOutIdx, color: "#FFC7CE", strikethrough: true });
+                                cellHighlights.push({ colIndex: colOutIdx, color: strikeColor, strikethrough: true, fontColor: strikeFontColor });
                             }
                         }
                         cells.push(val);
@@ -1458,12 +1473,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const retentionMsg = getRetentionMessage(sIds, ldaFollowUpMap, missingVal, tableContext, dncMap, dncMessageMap, nextAssignmentDueVal, nextAssignmentDueColumnAllBlank, settings.includeNextAssignmentDue, settings.expandedDNC, settings.authorFormat);
                     const dncTagText = lookupTagEntry(dncMap, sIds);
                     const dncTagsArr = dncTagText ? dncTagText.split(',').map(t => t.trim()) : [];
-                    // Only a general "DNC" highlights the row red — even when the outreach
-                    // message is the student's own comment text.
                     const isGeneralDnc = dncTagsArr.includes('dnc');
-                    // Expanded DNC: a "DNC - Phone" (without a general DNC) still writes its
-                    // outreach message, but the row gets no highlight at all.
-                    const suppressRetentionHighlight = settings.expandedDNC && dncTagsArr.includes('dnc - phone') && !isGeneralDnc;
+                    // Expanded DNC: a "DNC" or "DNC - Phone" writes its outreach message but gets
+                    // no row highlight — only the Outreach cell is filled (settings.dncColor),
+                    // and its phone strikethrough uses the same color with default text.
+                    const isDncOutreach = settings.expandedDNC && (isGeneralDnc || dncTagsArr.includes('dnc - phone'));
+                    const suppressRetentionHighlight = isDncOutreach;
+                    // LDA-tag follow-up rows highlight in settings.ldaTagColor (default yellow).
+                    const isLdaFollowUp = !!retentionMsg && retentionMsg.startsWith('Student will engage on');
 
                     // 2b. Course Start Baseline Check
                     let courseStartMsg = null;
@@ -1492,8 +1509,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                     // Determine Row/Partial Color:
                     let partialRowColor = "#FFEDD5"; // Orange Default
-                    if (retentionMsg === "Do not contact" || (settings.expandedDNC && isGeneralDnc)) {
-                        partialRowColor = "#FFC7CE"; // Red for DNC
+                    if (retentionMsg === "Do not contact") {
+                        partialRowColor = "#FFC7CE"; // Red for legacy DNC (expanded off)
+                    } else if (isLdaFollowUp) {
+                        partialRowColor = settings.ldaTagColor; // Yellow (same as Contacted) for LDA tag
                     } else if (isNextAssignmentDue) {
                         partialRowColor = "#e2efda"; // Light green for zero missing + next assignment due
                     }
@@ -1555,6 +1574,10 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             if (courseStartMsg) {
                                 comments.push({ colIndex: colOutIdx, text: courseStartMsg });
                             }
+                            // Expanded DNC fills only the Outreach cell (no row highlight).
+                            if (isDncOutreach) {
+                                cellHighlights.push({ colIndex: colOutIdx, color: settings.dncColor });
+                            }
                         }
 
                         // --- DNC Highlight (Highest Priority - Phone Columns) ---
@@ -1565,12 +1588,16 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             const hasGeneralDnc = dncTags.some(t => t === 'dnc');
                             const hasPhoneDnc = dncTags.some(t => t === 'dnc - phone');
                             const hasOtherPhoneDnc = dncTags.some(t => t === 'dnc - other phone');
+                            // Expanded DNC: strikethrough fill follows the DNC color with default
+                            // text. Legacy keeps the original red fill + dark-red text.
+                            const strikeColor = settings.expandedDNC ? settings.dncColor : "#FFC7CE";
+                            const strikeFontColor = settings.expandedDNC ? null : "#9C0006";
 
                             if (colConfig.name === 'Phone' && (hasGeneralDnc || hasPhoneDnc)) {
-                                cellHighlights.push({ colIndex: colOutIdx, color: "#FFC7CE", strikethrough: true });
+                                cellHighlights.push({ colIndex: colOutIdx, color: strikeColor, strikethrough: true, fontColor: strikeFontColor });
                             }
                             if (colConfig.name === 'Other Phone' && (hasGeneralDnc || hasOtherPhoneDnc)) {
-                                cellHighlights.push({ colIndex: colOutIdx, color: "#FFC7CE", strikethrough: true });
+                                cellHighlights.push({ colIndex: colOutIdx, color: strikeColor, strikethrough: true, fontColor: strikeFontColor });
                             }
                         }
 
@@ -1826,6 +1853,7 @@ async function applyTableHighlights(context, sheet, tableCtx, processedRows, onB
                             endCol: h.colIndex,
                             color: h.color,
                             strikethrough: h.strikethrough || false,
+                            fontColor: h.fontColor || null,
                         };
                     }
                 }
@@ -1874,8 +1902,12 @@ async function applyTableHighlights(context, sheet, tableCtx, processedRows, onB
             queuedOps++;
             if (op.strikethrough) {
                 range.format.font.strikethrough = true;
-                range.format.font.color = "#9C0006";
-                queuedOps += 2;
+                queuedOps += 1;
+                // Only override font color when specified; otherwise leave Excel's default.
+                if (op.fontColor) {
+                    range.format.font.color = op.fontColor;
+                    queuedOps += 1;
+                }
             }
             await flushIfFull();
         }

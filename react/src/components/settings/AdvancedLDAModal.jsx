@@ -36,6 +36,27 @@ function Segmented({ value, onChange, options, label }) {
   );
 }
 
+function ColorRow({ label, description, value, onChange }) {
+  return (
+    <div className="flex items-start justify-between gap-3 p-3 bg-slate-50/60 rounded-xl border border-slate-100">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-slate-700">{label}</div>
+        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{description}</p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-[11px] font-mono text-slate-400 uppercase">{value}</span>
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={label}
+          className="w-8 h-8 rounded-md border border-slate-200 cursor-pointer bg-white p-0.5"
+        />
+      </div>
+    </div>
+  );
+}
+
 function Toggle({ checked, onChange, label }) {
   return (
     <button
@@ -114,6 +135,19 @@ export default function AdvancedLDAModal({ isOpen, onClose, values, onChange }) 
               ]}
             />
           </div>
+
+          <ColorRow
+            label="LDA Tag color"
+            description="Highlight color for LDA follow-up comments (default matches the Contacted yellow)."
+            value={values.ldaTagColor || '#FFFF00'}
+            onChange={(v) => onChange('ldaTagColor', v)}
+          />
+          <ColorRow
+            label="DNC color"
+            description="Fill color for DNC outreach comments and the phone strikethrough."
+            value={values.dncColor || '#f2bdbd'}
+            onChange={(v) => onChange('dncColor', v)}
+          />
         </div>
 
         <div className="px-4 pb-4 flex justify-end">

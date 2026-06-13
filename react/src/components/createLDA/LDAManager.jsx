@@ -34,6 +34,8 @@ export default function CreateLDAManager({ onReady } = {}) {
     expandedDNC: false,
     compactColumnWidth: true,
     authorFormat: 'initials',
+    ldaTagColor: '#FFFF00',
+    dncColor: '#f2bdbd',
     sheetNameMode: 'date',
     advisorAssignment: {
       enabled: false,
@@ -109,6 +111,8 @@ export default function CreateLDAManager({ onReady } = {}) {
           expandedDNC: (wb.expandedDNC !== undefined) ? !!wb.expandedDNC : prev.expandedDNC,
           compactColumnWidth: (wb.compactColumnWidth !== undefined) ? !!wb.compactColumnWidth : prev.compactColumnWidth,
           authorFormat: (wb.authorFormat === 'initials' || wb.authorFormat === 'full') ? wb.authorFormat : prev.authorFormat,
+          ldaTagColor: (typeof wb.ldaTagColor === 'string' && wb.ldaTagColor) ? wb.ldaTagColor : prev.ldaTagColor,
+          dncColor: (typeof wb.dncColor === 'string' && wb.dncColor) ? wb.dncColor : prev.dncColor,
           sheetNameMode: wb.sheetNameMode || prev.sheetNameMode,
           advisorAssignment: wb.advisorAssignment || prev.advisorAssignment,
         }));
