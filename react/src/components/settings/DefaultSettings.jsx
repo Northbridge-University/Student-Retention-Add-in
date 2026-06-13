@@ -43,7 +43,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeFailingList',
-		label: 'Include Failing List',
+		label: 'Failing List',
 		type: 'boolean',
 		defaultValue: false, // No
         section: 'Create LDA',
@@ -51,7 +51,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeAttendanceList',
-		label: 'Include Attendance List',
+		label: 'Attendance List',
 		type: 'boolean',
 		defaultValue: false,
 		section: 'Create LDA',
@@ -59,7 +59,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeNextAssignmentDue',
-		label: 'Include Next Assignment Due',
+		label: 'Next Assignment Due',
 		type: 'boolean',
 		defaultValue: true,
 		section: 'Create LDA',
@@ -67,7 +67,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeLdatTag',
-		label: 'Include LDA Tag',
+		label: 'LDA Tag',
 		type: 'boolean',
 		defaultValue: true, // Yes
         section: 'Create LDA',
@@ -75,7 +75,7 @@ export const defaultWorkbookSettings = [
 	},
 		{
 		id: 'includeDncTag',
-		label: 'Include DNC Tag',
+		label: 'DNC Tag',
 		type: 'boolean',
 		defaultValue: true, // Yes
         section: 'Create LDA',
