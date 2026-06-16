@@ -4,6 +4,8 @@
  * Centralized service for managing communication with the Student Retention Kit Chrome Extension.
  * Handles extension detection, keep-alive pings, and message relay between the add-in and extension.
  */
+import { sheetNameDateVariants } from './excel-helpers.js';
+import { coalesceHighlightRequests } from './highlightQueue.js';
 
 class ChromeExtensionService {
   constructor() {
@@ -22,6 +24,22 @@ class ChromeExtensionService {
     this.highlightRetryCount = 0;
     this.MAX_HIGHLIGHT_RETRIES = 3;
     this.EXCEL_RUN_TIMEOUT_MS = 30000; // 30 seconds
+
+    // Highlight request queue. Incoming SRK_HIGHLIGHT_STUDENT_ROW requests
+    // are enqueued and executed by a single worker so only one highlight
+    // Excel.run is in flight at a time; everything that arrives while a run
+    // is in progress gets coalesced into bulk operations. Without this, a
+    // burst of requests (many students found by the submission checker at
+    // once) runs concurrent Excel.runs that each load the whole used range,
+    // which overwhelms Excel Online and drops highlights.
+    this._highlightQueue = [];
+    this._highlightWorkerActive = false;
+
+    // When false, this runtime ignores highlight requests entirely. The
+    // taskpane sets this to false so only the long-lived commands runtime
+    // executes highlights — otherwise both runtimes receive every request
+    // (the extension broadcasts to all frames) and do the same work twice.
+    this.highlightExecutionEnabled = true;
 
     // Callbacks for extension state changes
     this.listeners = new Set();
@@ -226,10 +244,14 @@ class ChromeExtensionService {
         break;
 
       case "SRK_HIGHLIGHT_STUDENT_ROW":
+        if (!this.highlightExecutionEnabled) {
+          console.log("ChromeExtensionService: Highlight execution disabled in this runtime; ignoring request (the commands runtime handles it).");
+          break;
+        }
         console.log("ChromeExtensionService: Highlight student row request received:", event.data);
         console.log("ChromeExtensionService: Excel API available:", typeof window.Excel !== "undefined");
         console.log("ChromeExtensionService: Last Excel health:", this.excelHealthy, "checked at:", this.lastExcelHealthCheck ? new Date(this.lastExcelHealthCheck).toISOString() : "never");
-        this.handleHighlightStudentRowWithRetry(event.data.data);
+        this.enqueueHighlightRequest(event.data.data);
         break;
 
       case "SRK_NAVIGATE_TO_STUDENT":
@@ -283,10 +305,97 @@ class ChromeExtensionService {
   }
 
   /**
+   * Enable or disable highlight execution for this runtime. Both the
+   * taskpane and the commands runtime receive every highlight request (the
+   * extension broadcasts to all frames); the taskpane disables execution so
+   * the always-alive commands runtime is the single executor.
+   * @param {boolean} enabled
+   */
+  setHighlightExecutionEnabled(enabled) {
+    this.highlightExecutionEnabled = !!enabled;
+    console.log(`ChromeExtensionService: Highlight execution ${this.highlightExecutionEnabled ? "enabled" : "disabled"} for this runtime.`);
+  }
+
+  /**
+   * Queue a highlight request for the serialized worker. Requests that pile
+   * up while a highlight Excel.run is in flight are coalesced into bulk
+   * operations (one per target sheet/format group) before execution.
+   * @param {Object} payload - SRK_HIGHLIGHT_STUDENT_ROW data (single or bulk shape)
+   */
+  enqueueHighlightRequest(payload) {
+    this._highlightQueue.push(payload);
+    this._runHighlightQueue();
+  }
+
+  /**
+   * Worker loop for the highlight queue. Only one instance runs at a time;
+   * each iteration drains everything queued so far, coalesces it, and
+   * executes the resulting payloads sequentially.
+   */
+  async _runHighlightQueue() {
+    if (this._highlightWorkerActive) return;
+    this._highlightWorkerActive = true;
+
+    try {
+      while (this._highlightQueue.length > 0) {
+        const drained = this._highlightQueue.splice(0, this._highlightQueue.length);
+        const coalesced = coalesceHighlightRequests(drained);
+        if (drained.length > coalesced.length) {
+          console.log(`ChromeExtensionService: Coalesced ${drained.length} queued highlight requests into ${coalesced.length} operation(s).`);
+        }
+        for (const payload of coalesced) {
+          try {
+            await this.handleHighlightStudentRowWithRetry(payload);
+          } catch (error) {
+            // handleHighlightStudentRowWithRetry reports its own errors;
+            // never let one payload kill the worker loop.
+            console.error("ChromeExtensionService: Unexpected error from highlight handler:", error);
+          }
+        }
+      }
+    } finally {
+      this._highlightWorkerActive = false;
+    }
+  }
+
+  /**
+   * Resolves a worksheet by name, falling back to date-format variants
+   * ("LDA 6-10-2026" ↔ "LDA 06-10-2026", slash/dash separators) when the
+   * exact name isn't found. Shared by the single, bulk, and navigate paths.
+   * @param {Object} context - Excel.run request context
+   * @param {string} targetSheet - Requested sheet name
+   * @returns {Promise<Object|null>} Worksheet proxy, or null if not found
+   */
+  async _resolveWorksheet(context, targetSheet) {
+    let worksheet = context.workbook.worksheets.getItemOrNullObject(targetSheet);
+    worksheet.load("isNullObject");
+    await context.sync();
+    if (!worksheet.isNullObject) return worksheet;
+
+    const variations = sheetNameDateVariants(targetSheet);
+    if (variations.length <= 1) return null;
+
+    const sheets = context.workbook.worksheets;
+    sheets.load("items/name");
+    await context.sync();
+
+    for (const variation of variations) {
+      const matchingSheet = sheets.items.find(sheet => sheet.name === variation);
+      if (matchingSheet) {
+        console.log(`ChromeExtensionService: Found sheet "${matchingSheet.name}" using date format normalization (requested: "${targetSheet}")`);
+        return context.workbook.worksheets.getItem(matchingSheet.name);
+      }
+    }
+    return null;
+  }
+
+  /**
    * Retry wrapper for handleHighlightStudentRow.
    * If the first attempt fails with a retryable error (timeout, stale session),
    * performs up to MAX_HIGHLIGHT_RETRIES retries with exponential backoff.
    * Non-retryable errors (bad params, missing sheet) fail immediately.
+   * Executions are serialized by the highlight queue, so the shared retry
+   * counter is only ever touched by one invocation at a time.
    * @param {Object} payload - Highlight request payload (same as handleHighlightStudentRow)
    */
   async handleHighlightStudentRowWithRetry(payload) {
@@ -367,12 +476,8 @@ class ChromeExtensionService {
 
     try {
       await this.excelRunWithTimeout(async (context) => {
-        // Resolve worksheet (simple lookup; date-normalization path is only
-        // used by the single-student handler today).
-        let worksheet = context.workbook.worksheets.getItemOrNullObject(targetSheet);
-        worksheet.load("isNullObject");
-        await context.sync();
-        if (worksheet.isNullObject) {
+        const worksheet = await this._resolveWorksheet(context, targetSheet);
+        if (!worksheet) {
           const msg = `Sheet "${targetSheet}" not found in the workbook.`;
           console.error("ChromeExtensionService:", msg);
           students.forEach(s => this.sendHighlightConfirmation(s?.syStudentId, "error", msg));
@@ -489,8 +594,14 @@ class ChromeExtensionService {
       });
     } catch (error) {
       console.error("ChromeExtensionService: Error in bulk highlight:", error);
-      const msg = error.message || "Unknown error during bulk highlight.";
-      students.forEach(s => this.sendHighlightConfirmation(s?.syStudentId, "error", msg));
+      // Only report errors to the extension when this is the final outcome.
+      // The retry wrapper will re-run retryable failures, and a premature
+      // error confirmation would mark students failed that later succeed.
+      const willRetry = this.isRetryableError(error) && this.highlightRetryCount < this.MAX_HIGHLIGHT_RETRIES;
+      if (!willRetry) {
+        const msg = error.message || "Unknown error during bulk highlight.";
+        students.forEach(s => this.sendHighlightConfirmation(s?.syStudentId, "error", msg));
+      }
       // Rethrow so the retry wrapper can catch retryable errors.
       throw error;
     }
@@ -501,11 +612,16 @@ class ChromeExtensionService {
     if (typeof window.Excel === "undefined") {
       const msg = "Excel API is not available. The add-in may not be running inside Excel.";
       console.warn("ChromeExtensionService:", msg);
-      this.sendHighlightConfirmation(payload?.syStudentId, "error", msg);
+      if (payload && Array.isArray(payload.students)) {
+        payload.students.forEach(s => this.sendHighlightConfirmation(s?.syStudentId, "error", msg));
+      } else {
+        this.sendHighlightConfirmation(payload?.syStudentId, "error", msg);
+      }
       return;
     }
 
-    // Bulk highlight path — when extension sends debounced batch of submissions.
+    // Bulk highlight path — when the extension sends a batched payload, or
+    // the highlight queue coalesced several queued requests into one.
     if (payload && Array.isArray(payload.students) && payload.students.length > 0) {
       return this.handleBulkHighlightStudentRows(payload);
     }
@@ -564,101 +680,10 @@ class ChromeExtensionService {
 
     try {
       await this.excelRunWithTimeout(async (context) => {
-        // Helper function to normalize date formats (e.g., "01/11/2026" <-> "1/11/2026" <-> "LDA 01-11-2026")
-        const normalizeDateFormat = (dateStr) => {
-          // Check if the string looks like a date format (contains / or -)
-          if (!dateStr || typeof dateStr !== 'string') {
-            return [dateStr]; // Not a string, return as-is
-          }
-
-          // Extract any prefix (e.g., "LDA " from "LDA 01-11-2026")
-          const datePattern = /^(.*?)(\d{1,2}[/-]\d{1,2}[/-]\d{4})$/;
-          const match = dateStr.match(datePattern);
-
-          if (!match) {
-            return [dateStr]; // Not a recognizable date format, return as-is
-          }
-
-          const prefix = match[1]; // e.g., "LDA " or ""
-          const datePart = match[2]; // e.g., "01-11-2026"
-
-          // Detect separator (slash or dash)
-          let separator = null;
-          if (datePart.includes('/')) {
-            separator = '/';
-          } else if (datePart.includes('-')) {
-            separator = '-';
-          } else {
-            return [dateStr]; // Not a date format, return as-is
-          }
-
-          const parts = datePart.split(separator);
-          if (parts.length !== 3) {
-            return [dateStr]; // Not a standard date format
-          }
-
-          const [month, day, year] = parts;
-
-          // Generate variations with and without leading zeros, with both separators
-          const variations = new Set();
-
-          // Add original
-          variations.add(dateStr);
-
-          // For both separators (/ and -)
-          const separators = ['/', '-'];
-          separators.forEach(sep => {
-            // Version with leading zeros
-            variations.add(`${prefix}${month.padStart(2, '0')}${sep}${day.padStart(2, '0')}${sep}${year}`);
-
-            // Version without leading zeros
-            variations.add(`${prefix}${parseInt(month, 10)}${sep}${parseInt(day, 10)}${sep}${year}`);
-
-            // Variations with only month or only day having leading zeros
-            variations.add(`${prefix}${month.padStart(2, '0')}${sep}${parseInt(day, 10)}${sep}${year}`);
-            variations.add(`${prefix}${parseInt(month, 10)}${sep}${day.padStart(2, '0')}${sep}${year}`);
-          });
-
-          return Array.from(variations);
-        };
-
         // Try to get the target worksheet with resilient matching
-        let worksheet = context.workbook.worksheets.getItemOrNullObject(targetSheet);
-        worksheet.load("isNullObject");
-        await context.sync();
+        const worksheet = await this._resolveWorksheet(context, targetSheet);
 
-        // If exact match fails, try normalized date variations
-        if (worksheet.isNullObject) {
-          const variations = normalizeDateFormat(targetSheet);
-
-          // If we have variations, load all sheets and try to find a match
-          if (variations.length > 1) {
-            const sheets = context.workbook.worksheets;
-            sheets.load("items/name");
-            await context.sync();
-
-            // Try each variation against all sheet names
-            let foundSheetName = null;
-            for (const variation of variations) {
-              const matchingSheet = sheets.items.find(sheet => sheet.name === variation);
-              if (matchingSheet) {
-                foundSheetName = matchingSheet.name;
-                break;
-              }
-            }
-
-            if (foundSheetName) {
-              console.log(`ChromeExtensionService: Found sheet "${foundSheetName}" using date format normalization (requested: "${targetSheet}")`);
-              worksheet = context.workbook.worksheets.getItem(foundSheetName);
-            }
-          }
-        }
-
-        // Final check if sheet was found
-        worksheet.load("isNullObject");
-        await context.sync();
-
-        if (worksheet.isNullObject) {
+        if (!worksheet) {
           const msg = `Sheet "${targetSheet}" not found in the workbook. Verify the sheet name is correct (sheet names are case-sensitive).`;
           console.error("ChromeExtensionService:", msg);
           this.sendHighlightConfirmation(syStudentId, "error", msg);
@@ -917,58 +942,9 @@ class ChromeExtensionService {
     try {
       await Excel.run(async (context) => {
         // --- Resolve the target worksheet (with date-format normalization) ---
-        const normalizeDateFormat = (dateStr) => {
-          if (!dateStr || typeof dateStr !== 'string') return [dateStr];
-          const datePattern = /^(.*?)(\d{1,2}[/-]\d{1,2}[/-]\d{4})$/;
-          const match = dateStr.match(datePattern);
-          if (!match) return [dateStr];
+        const worksheet = await this._resolveWorksheet(context, targetSheet);
 
-          const prefix = match[1];
-          const datePart = match[2];
-          const separator = datePart.includes('/') ? '/' : datePart.includes('-') ? '-' : null;
-          if (!separator) return [dateStr];
-
-          const parts = datePart.split(separator);
-          if (parts.length !== 3) return [dateStr];
-          const [month, day, year] = parts;
-
-          const variations = new Set();
-          variations.add(dateStr);
-          ['/', '-'].forEach(sep => {
-            variations.add(`${prefix}${month.padStart(2, '0')}${sep}${day.padStart(2, '0')}${sep}${year}`);
-            variations.add(`${prefix}${parseInt(month, 10)}${sep}${parseInt(day, 10)}${sep}${year}`);
-            variations.add(`${prefix}${month.padStart(2, '0')}${sep}${parseInt(day, 10)}${sep}${year}`);
-            variations.add(`${prefix}${parseInt(month, 10)}${sep}${day.padStart(2, '0')}${sep}${year}`);
-          });
-          return Array.from(variations);
-        };
-
-        let worksheet = context.workbook.worksheets.getItemOrNullObject(targetSheet);
-        worksheet.load("isNullObject");
-        await context.sync();
-
-        if (worksheet.isNullObject) {
-          const variations = normalizeDateFormat(targetSheet);
-          if (variations.length > 1) {
-            const sheets = context.workbook.worksheets;
-            sheets.load("items/name");
-            await context.sync();
-            let foundSheetName = null;
-            for (const variation of variations) {
-              const matchingSheet = sheets.items.find(s => s.name === variation);
-              if (matchingSheet) { foundSheetName = matchingSheet.name; break; }
-            }
-            if (foundSheetName) {
-              console.log(`ChromeExtensionService: Navigate - found sheet "${foundSheetName}" via date normalization (requested: "${targetSheet}")`);
-              worksheet = context.workbook.worksheets.getItem(foundSheetName);
-            }
-          }
-        }
-
-        worksheet.load("isNullObject");
-        await context.sync();
-
-        if (worksheet.isNullObject) {
+        if (!worksheet) {
           console.error(`ChromeExtensionService: Navigate - sheet "${targetSheet}" not found.`);
           return;
         }
@@ -1228,6 +1204,8 @@ class ChromeExtensionService {
     this.excelHealthy = null;
     this.lastExcelHealthCheck = null;
     this.highlightRetryCount = 0;
+    // Drop any queued highlight requests (an in-flight one finishes on its own)
+    this._highlightQueue.length = 0;
   }
 
   /**
@@ -1240,6 +1218,7 @@ class ChromeExtensionService {
     window.removeEventListener("message", this.handleMessage);
     this._messageListenerAttached = false;
     this.listeners.clear();
+    this._highlightQueue.length = 0;
   }
 }
 

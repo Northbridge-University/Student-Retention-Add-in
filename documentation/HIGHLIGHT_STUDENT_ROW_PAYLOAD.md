@@ -30,6 +30,56 @@ SRK_HIGHLIGHT_STUDENT_ROW
 }
 ```
 
+## Bulk Payload Structure (multiple students, one sheet)
+
+When several students need the same highlight treatment on the same sheet
+(e.g. the submission checker found a burst of submissions), send ONE message
+with a `students` array instead of one message per student. The add-in
+applies the whole batch in a single Excel.run with one used-range load and
+one final sync:
+
+```javascript
+{
+  type: "SRK_HIGHLIGHT_STUDENT_ROW",
+  data: {
+    students: [                    // (required) one entry per student
+      {
+        studentName: string,       // for logging
+        syStudentId: string,       // required - used to find the row
+        editText: string           // optional, per-student text for editColumn
+      },
+      ...
+    ],
+    startCol: number | string,     // shared by the batch (required)
+    endCol: number | string,       // shared by the batch (required)
+    targetSheet: string,           // shared by the batch (required)
+    color: string,                 // optional, defaults to #FFFF00
+    editColumn: number | string    // optional, shared by the batch
+  }
+}
+```
+
+One `SRK_HIGHLIGHT_CONFIRMATION` is sent back **per student** in the batch.
+
+### Request queueing and coalescing
+
+The add-in serializes all highlight requests through an internal queue —
+only one highlight Excel.run is in flight at a time. Requests that arrive
+while one is running are coalesced: payloads sharing the same
+`targetSheet`/`startCol`/`endCol`/`color`/`editColumn` merge into a single
+bulk operation, and duplicate `syStudentId`s are deduped (latest wins).
+Senders therefore don't need to throttle; a flood of single-student messages
+degrades gracefully into a handful of bulk Excel operations.
+
+### Which runtime executes highlights
+
+Both the taskpane and the hidden commands runtime receive extension
+messages (the extension broadcasts to all frames). Only the **commands
+runtime** executes highlights — the taskpane calls
+`chromeExtensionService.setHighlightExecutionEnabled(false)` at startup so
+the same request isn't applied twice. The commands runtime autoloads with
+the document (`LaunchEvent` + `lifetime="long"`), so it is always available.
+
 ## Parameter Details
 
 | Parameter | Type | Required | Description | Example |
@@ -648,7 +698,7 @@ chromeExtensionService.addListener((event) => {
 - ✅ **Case-insensitive column matching** - Column names and Student IDs are matched case-insensitively
 - ✅ **Optional cell editing** - Can update a specific cell while highlighting the row
 - ✅ **Flexible column specification** - Mix column names and indices in the same request
-- ⚠️ **Exact sheet name required** - Sheet names must match exactly (case-sensitive)
+- ⚠️ **Exact sheet name preferred** - Sheet names are matched case-sensitively, but names ending in a date get a normalization fallback ("LDA 6-10-2026" also matches "LDA 06-10-2026", slash or dash separators)
 - ⚠️ **Student must exist** - The student ID must be present in the specified sheet
 - ⚠️ **Column names must match headers** - Column names must exactly match header text (row 1)
 - ⚠️ **Cell editing requires both parameters** - Both `editColumn` and `editText` must be provided to edit a cell

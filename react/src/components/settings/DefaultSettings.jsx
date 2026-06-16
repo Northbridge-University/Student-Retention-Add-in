@@ -43,7 +43,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeFailingList',
-		label: 'Include Failing List',
+		label: 'Failing List',
 		type: 'boolean',
 		defaultValue: false, // No
         section: 'Create LDA',
@@ -51,7 +51,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeAttendanceList',
-		label: 'Include Attendance List',
+		label: 'Attendance List',
 		type: 'boolean',
 		defaultValue: false,
 		section: 'Create LDA',
@@ -59,7 +59,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeNextAssignmentDue',
-		label: 'Include Next Assignment Due',
+		label: 'Next Assignment Due',
 		type: 'boolean',
 		defaultValue: true,
 		section: 'Create LDA',
@@ -67,7 +67,7 @@ export const defaultWorkbookSettings = [
 	},
 	{
 		id: 'includeLdatTag',
-		label: 'Include LDA Tag',
+		label: 'LDA Tag',
 		type: 'boolean',
 		defaultValue: true, // Yes
         section: 'Create LDA',
@@ -75,11 +75,64 @@ export const defaultWorkbookSettings = [
 	},
 		{
 		id: 'includeDncTag',
-		label: 'Include DNC Tag',
+		label: 'DNC Tag',
 		type: 'boolean',
 		defaultValue: true, // Yes
         section: 'Create LDA',
 		description: 'Whether to include the Do Not Contact students.'
+	},
+	{
+		id: 'advancedLda',
+		label: 'Advanced',
+		type: 'advanced',
+		defaultValue: null,
+		section: 'Create LDA',
+		description: 'Expanded DNC messaging and column width options.'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'expandedDNC',
+		label: 'Expanded DNC',
+		type: 'boolean',
+		defaultValue: false,
+		hidden: true,
+		description: 'Fill the Outreach column with the DNC comment text and who left it, instead of a flat "Do not contact". Off restores the original DNC behavior.'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'compactColumnWidth',
+		label: 'Compact Column Width',
+		type: 'boolean',
+		defaultValue: true,
+		hidden: true,
+		description: 'Pin key columns (Outreach, ProgramVersion, etc.) to fixed widths and wrap the Outreach text. Off autosizes columns like before.'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'authorFormat',
+		label: 'Author',
+		type: 'string',
+		defaultValue: 'initials',
+		hidden: true,
+		description: 'How the note author appears in outreach messages: full name (Victor Blanco) or initials (vb).'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'ldaTagColor',
+		label: 'LDA Tag Color',
+		type: 'string',
+		defaultValue: '#FFFF00',
+		hidden: true,
+		description: 'Highlight color for LDA follow-up outreach comments.'
+	},
+	{
+		// Surfaced via the Create LDA "Advanced" modal; hidden from the normal list.
+		id: 'dncColor',
+		label: 'DNC Color',
+		type: 'string',
+		defaultValue: '#f2bdbd',
+		hidden: true,
+		description: 'Fill color for DNC outreach comments and the phone-column strikethrough.'
 	},
 	{
 		id: 'powerAutomateUrl',

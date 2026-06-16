@@ -31,6 +31,11 @@ export default function CreateLDAManager({ onReady } = {}) {
     includeLDATag: true,
     includeDNCTag: true,
     includeNextAssignmentDue: true,
+    expandedDNC: false,
+    compactColumnWidth: true,
+    authorFormat: 'initials',
+    ldaTagColor: '#FFFF00',
+    dncColor: '#f2bdbd',
     sheetNameMode: 'date',
     advisorAssignment: {
       enabled: false,
@@ -103,6 +108,11 @@ export default function CreateLDAManager({ onReady } = {}) {
           includeLDATag: (wb.includeLDATag !== undefined) ? !!wb.includeLDATag : ((wb.includeLdatTag !== undefined) ? !!wb.includeLdatTag : prev.includeLDATag),
           includeDNCTag: (wb.includeDNCTag !== undefined) ? !!wb.includeDNCTag : ((wb.includeDncTag !== undefined) ? !!wb.includeDncTag : prev.includeDNCTag),
           includeNextAssignmentDue: (wb.includeNextAssignmentDue !== undefined) ? !!wb.includeNextAssignmentDue : prev.includeNextAssignmentDue,
+          expandedDNC: (wb.expandedDNC !== undefined) ? !!wb.expandedDNC : prev.expandedDNC,
+          compactColumnWidth: (wb.compactColumnWidth !== undefined) ? !!wb.compactColumnWidth : prev.compactColumnWidth,
+          authorFormat: (wb.authorFormat === 'initials' || wb.authorFormat === 'full') ? wb.authorFormat : prev.authorFormat,
+          ldaTagColor: (typeof wb.ldaTagColor === 'string' && wb.ldaTagColor) ? wb.ldaTagColor : prev.ldaTagColor,
+          dncColor: (typeof wb.dncColor === 'string' && wb.dncColor) ? wb.dncColor : prev.dncColor,
           sheetNameMode: wb.sheetNameMode || prev.sheetNameMode,
           advisorAssignment: wb.advisorAssignment || prev.advisorAssignment,
         }));

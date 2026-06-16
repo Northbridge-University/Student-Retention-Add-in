@@ -147,6 +147,12 @@ function App() {
   useEffect(() => {
     console.log("App: Initializing Chrome Extension Service (Master Relay)");
 
+    // The extension broadcasts highlight requests to every add-in frame.
+    // The long-lived commands runtime (always alive while the workbook is
+    // open) is the single executor; the taskpane must not duplicate the
+    // same Excel writes.
+    chromeExtensionService.setHighlightExecutionEnabled(false);
+
     // Start extension detection
     chromeExtensionService.startPinging();
 
