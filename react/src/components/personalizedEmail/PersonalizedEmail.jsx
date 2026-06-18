@@ -951,28 +951,30 @@ export default function PersonalizedEmail({ user, onReady }) {
             return;
         }
 
-        // Generate base64 PDF receipt to include in payload
-        const initiator = { name: user, email: userEmail };
-        const receiptBase64 = generatePdfReceipt(
-            payload.emails,
-            body,
-            initiator,
-            true // returnBase64
-        );
+        // Optionally include a base64 PDF receipt in the payload (off by default;
+        // controlled by the "Include Receipts" toggle in the Power Automate config)
+        let payloadToSend = payload;
+        if (powerAutomateConnection?.includeReceipt === true) {
+            const initiator = { name: user, email: userEmail };
+            const receiptBase64 = generatePdfReceipt(
+                payload.emails,
+                body,
+                initiator,
+                true // returnBase64
+            );
+            payloadToSend = {
+                ...payload,
+                receipt: receiptBase64 || ''
+            };
+        }
 
-        // Add receipt to payload
-        const payloadWithReceipt = {
-            ...payload,
-            receipt: receiptBase64 || ''
-        };
-
-        setLastSentPayload(payloadWithReceipt);
+        setLastSentPayload(payloadToSend);
 
         try {
             const response = await fetch(powerAutomateConnection.url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payloadWithReceipt)
+                body: JSON.stringify(payloadToSend)
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             await recordLastSent(payload.emails.length);
@@ -1098,23 +1100,27 @@ export default function PersonalizedEmail({ user, onReady }) {
 
         try {
             if (mode === 'powerautomate') {
-                const initiator = { name: user, email: userEmail };
-                const receiptBase64 = generatePdfReceipt(
-                    testPayload.emails,
-                    body,
-                    initiator,
-                    true // returnBase64
-                );
-
-                const testPayloadWithReceipt = {
-                    ...testPayload,
-                    receipt: receiptBase64 || ''
-                };
+                // Optionally include a base64 PDF receipt in the payload (off by default;
+                // controlled by the "Include Receipts" toggle in the Power Automate config)
+                let testPayloadToSend = testPayload;
+                if (powerAutomateConnection?.includeReceipt === true) {
+                    const initiator = { name: user, email: userEmail };
+                    const receiptBase64 = generatePdfReceipt(
+                        testPayload.emails,
+                        body,
+                        initiator,
+                        true // returnBase64
+                    );
+                    testPayloadToSend = {
+                        ...testPayload,
+                        receipt: receiptBase64 || ''
+                    };
+                }
 
                 const response = await fetch(powerAutomateConnection.url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(testPayloadWithReceipt)
+                    body: JSON.stringify(testPayloadToSend)
                 });
 
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
