@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getTodaysLdaSheetName } from './helpers';
 import { tokenizeRichText } from './emojiText';
+import { compressDataUriImage, dataUriByteLength, IMAGE_COMPRESS_THRESHOLD_BYTES } from './imageCompression';
 
 // Cache of rasterized emoji so the same glyph isn't re-rendered to a canvas
 // repeatedly within one receipt. Keyed by `${emoji}@${size}`.
@@ -108,6 +109,49 @@ function escapeHtml(value) {
         .replace(/"/g, '&quot;');
 }
 
+// Fetch a remote image and convert it to a data-URI so it can be rasterized.
+// Returns null if it can't be fetched (e.g. cross-origin without CORS headers).
+async function urlToDataUri(url) {
+    try {
+        const response = await fetch(url, { mode: 'cors' });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) return null;
+        return await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+        });
+    } catch {
+        return null;
+    }
+}
+
+// Normalize every <img> in the preview so html2canvas can rasterize it. Images
+// that arrive via a parameter value bypass the editor's compression, so they
+// can be large uncompressed data-URIs (re-encode them) or remote URLs (inline
+// them). Both are otherwise prone to being dropped from the canvas.
+async function normalizeImagesForCapture(container) {
+    const imgs = Array.from(container.querySelectorAll('img'));
+    await Promise.all(imgs.map(async (img) => {
+        const src = img.getAttribute('src') || '';
+        try {
+            if (src.startsWith('data:image')) {
+                if (dataUriByteLength(src) > IMAGE_COMPRESS_THRESHOLD_BYTES) {
+                    const compressed = await compressDataUriImage(src, { maxDimension: 1280, quality: 0.8 });
+                    if (compressed) img.setAttribute('src', compressed);
+                }
+            } else if (/^https?:\/\//i.test(src)) {
+                const dataUri = await urlToDataUri(src);
+                if (dataUri) img.setAttribute('src', dataUri);
+            }
+        } catch {
+            // Leave the original src; html2canvas will do its best.
+        }
+    }));
+}
+
 // Wait for every <img> in a container to finish decoding so html2canvas
 // captures them (data-URIs decode quickly but still asynchronously).
 function waitForImages(container) {
@@ -179,6 +223,7 @@ async function captureEmailPreview(email, cssWidth) {
 
     document.body.appendChild(container);
     try {
+        await normalizeImagesForCapture(container);
         await waitForImages(container);
         const canvas = await html2canvas(container, {
             backgroundColor: '#ffffff',
