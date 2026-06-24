@@ -37,7 +37,7 @@ function emojiToDataUrl(emoji, sizePx) {
         const url = canvas.toDataURL('image/png');
         emojiImageCache.set(key, url);
         return url;
-    } catch (err) {
+    } catch {
         emojiImageCache.set(key, null);
         return null;
     }
@@ -100,6 +100,102 @@ async function prepareReceiptImageMap(htmlStrings) {
     return map;
 }
 
+function escapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// Wait for every <img> in a container to finish decoding so html2canvas
+// captures them (data-URIs decode quickly but still asynchronously).
+function waitForImages(container) {
+    const imgs = Array.from(container.querySelectorAll('img'));
+    return Promise.all(imgs.map((img) => {
+        if (img.complete && img.naturalWidth) return Promise.resolve();
+        return new Promise((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+        });
+    }));
+}
+
+/**
+ * Render one email (subject/from/to + body) as an email-client-style card and
+ * rasterize it with html2canvas, so the receipt mirrors how the message looks
+ * in a real email/web view (true fonts, colors, layout, images, color emoji).
+ * Returns { dataUrl, width, height } or null if capture isn't possible.
+ * @param {{subject?: string, from?: string, to?: string, cc?: string, body?: string}} email
+ * @param {number} cssWidth - layout width of the preview card in CSS px
+ * @returns {Promise<{dataUrl: string, width: number, height: number}|null>}
+ */
+async function captureEmailPreview(email, cssWidth) {
+    if (typeof document === 'undefined') return null;
+
+    // Loaded on demand so html2canvas (~200KB) stays out of the main bundle.
+    let html2canvas;
+    try {
+        html2canvas = (await import('html2canvas')).default;
+    } catch (err) {
+        console.warn('html2canvas unavailable; falling back to text rendering:', err);
+        return null;
+    }
+    if (typeof html2canvas !== 'function') return null;
+
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-10000px';
+    container.style.top = '0';
+    container.style.width = `${cssWidth}px`;
+    container.style.background = '#ffffff';
+    container.style.boxSizing = 'border-box';
+    container.style.pointerEvents = 'none';
+    container.style.fontFamily = 'Arial, Helvetica, sans-serif';
+
+    const ccRow = email.cc
+        ? `<div style="font-size:12px; color:#6b7280; margin-top:2px;"><span style="color:#374151; font-weight:600;">Cc:</span> ${escapeHtml(email.cc)}</div>`
+        : '';
+
+    container.innerHTML = `
+        <div style="border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; background:#ffffff;">
+            <div style="background:#f9fafb; padding:14px 18px; border-bottom:1px solid #e5e7eb;">
+                <div style="font-size:18px; font-weight:600; color:#111827; line-height:1.3;">${escapeHtml(email.subject) || '(no subject)'}</div>
+                <div style="font-size:12px; color:#6b7280; margin-top:8px;"><span style="color:#374151; font-weight:600;">From:</span> ${escapeHtml(email.from)}</div>
+                <div style="font-size:12px; color:#6b7280; margin-top:2px;"><span style="color:#374151; font-weight:600;">To:</span> ${escapeHtml(email.to)}</div>
+                ${ccRow}
+            </div>
+            <div style="padding:18px; font-size:14px; line-height:1.5; color:#111827; word-wrap:break-word; overflow-wrap:break-word;">
+                ${email.body || ''}
+            </div>
+        </div>
+    `;
+
+    // Constrain any embedded images to the card width.
+    container.querySelectorAll('img').forEach((img) => {
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+    });
+
+    document.body.appendChild(container);
+    try {
+        await waitForImages(container);
+        const canvas = await html2canvas(container, {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            windowWidth: cssWidth,
+        });
+        return { dataUrl: canvas.toDataURL('image/jpeg', 0.92), width: canvas.width, height: canvas.height };
+    } catch (err) {
+        console.warn('Email preview capture failed:', err);
+        return null;
+    } finally {
+        document.body.removeChild(container);
+    }
+}
+
 /**
  * Renders an HTML string with basic formatting into a jsPDF document,
 
@@ -156,7 +252,7 @@ function renderHtmlInPdf(doc, html, options) {
 
         try {
             doc.addImage(entry.img, entry.format, startX, currentY, dispW, dispH, entry.alias);
-        } catch (err) {
+        } catch {
             try {
                 doc.addImage(entry.dataUri, entry.format, startX, currentY, dispW, dispH, entry.alias);
             } catch (err2) {
@@ -185,7 +281,7 @@ function renderHtmlInPdf(doc, html, options) {
                     try {
                         // Alias keyed by glyph+size so a repeated emoji is embedded once.
                         doc.addImage(url, 'PNG', currentX, currentY - emojiSize * 0.85, emojiSize, emojiSize, `emoji-${token.value}-${emojiSize}`);
-                    } catch (err) {
+                    } catch {
                         // Skip an emoji we can't place rather than aborting the receipt.
                     }
                 }
@@ -288,60 +384,11 @@ function renderHtmlInPdf(doc, html, options) {
 }
 
 /**
- * Estimates the height needed to render HTML content
- */
-function estimateHtmlHeight(doc, html, maxWidth, imageMap) {
-    const lineHeight = 12;
-    const paragraphSpacing = 18;
-    let estimatedHeight = 0;
-
-    const tempDiv = document.createElement('div');
-    tempDiv.style.display = 'none';
-    tempDiv.innerHTML = html;
-    document.body.appendChild(tempDiv);
-
-    const estimateNodeHeight = (node, currentX) => {
-        if (node.nodeType === 3) {
-            let textContent = (node.textContent || '').replace(/\s+/g, ' ');
-            const words = textContent.split(' ');
-            for (const word of words) {
-                if (!word) continue;
-                const wordWithSpace = word + ' ';
-                const wordWidth = doc.getTextWidth(wordWithSpace);
-                if (currentX + wordWidth > maxWidth) {
-                    estimatedHeight += lineHeight;
-                    currentX = 0;
-                }
-                currentX += wordWidth;
-            }
-        } else if (node.nodeType === 1 && node.tagName === 'IMG') {
-            const entry = imageMap ? imageMap.get(node.getAttribute('src')) : null;
-            if (entry && entry.width && entry.height) {
-                const dispW = Math.min(entry.width, maxWidth);
-                estimatedHeight += entry.height * (dispW / entry.width) + 4;
-            }
-            currentX = 0;
-        } else {
-            for (const child of Array.from(node.childNodes)) {
-                currentX = estimateNodeHeight(child, currentX);
-            }
-        }
-        return currentX;
-    };
-
-    Array.from(tempDiv.children).forEach(element => {
-        estimateNodeHeight(element, 0);
-        estimatedHeight += paragraphSpacing;
-    });
-
-    document.body.removeChild(tempDiv);
-    return estimatedHeight + 20; // Add some padding
-}
-
-/**
  * Generates a PDF receipt from the email payload using jsPDF and jsPDF-AutoTable.
- * @param {Array} emails - Array of email objects
- * @param {string} bodyTemplate - The email body template
+ * The message preview is rendered from a representative entry in `emails`, so it
+ * mirrors how the sent message looks in an email/web view.
+ * @param {Array} emails - Array of email objects ({ from, to, cc, subject, body })
+ * @param {string} [bodyTemplate] - Retained for backward compatibility; no longer used
  * @param {Object} initiator - Object with name and email of who initiated the send
  * @param {boolean} returnBase64 - If true, returns base64 string instead of saving
  * @returns {Promise<string|undefined>} - Base64 string if returnBase64 is true, undefined otherwise
@@ -351,10 +398,6 @@ export async function generatePdfReceipt(emails, bodyTemplate, initiator = {}, r
         console.error("Emails array is empty. Cannot generate PDF receipt.");
         return;
     }
-
-    // Pre-load any embedded images (template + a rendered body share the same
-    // <img> sources) so the synchronous renderer can draw them with real sizes.
-    const imageMap = await prepareReceiptImageMap([bodyTemplate, emails[0] && emails[0].body]);
 
     try {
         const doc = new jsPDF({ orientation: "portrait", unit: "px", format: "letter" });
@@ -369,7 +412,10 @@ export async function generatePdfReceipt(emails, bodyTemplate, initiator = {}, r
         doc.setFontSize(18);
         doc.text("Email Sending Receipt", pageWidth / 2, currentY + 40, { align: "center" });
         doc.setFontSize(10);
-        doc.text(`Sent on: ${new Date().toLocaleString()}`, pageWidth / 2, currentY + 55, { align: "center" });
+        const sentOn = new Date().toLocaleString(undefined, {
+            year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit'
+        });
+        doc.text(`Sent on: ${sentOn}`, pageWidth / 2, currentY + 55, { align: "center" });
 
         // Add initiator info
         if (initiator.name || initiator.email) {
@@ -414,54 +460,37 @@ export async function generatePdfReceipt(emails, bodyTemplate, initiator = {}, r
         }
         currentY += 20;
 
-        // Message Body section
+        // Message Preview section — a representative rendered email shown
+        // web-view style (mirrors how it looks in an email client) and scaled
+        // to fit the rest of this page.
         doc.setFontSize(12);
-        doc.text("Message Body", margin, currentY);
+        doc.text("Message Preview", margin, currentY);
         doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
-        currentY += 20;
+        currentY += 14;
 
-        const containsParameters = /\{(\w+)\}/.test(bodyTemplate);
+        const previewEmail = emails[Math.floor(Math.random() * emails.length)];
+        const availableHeight = (pageHeight - margin) - currentY;
+        const preview = await captureEmailPreview(previewEmail, 640);
 
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        const beforeTitle = containsParameters ? "Template Format:" : "Email Body:";
-        doc.text(beforeTitle, margin, currentY);
-        doc.setFont(undefined, 'normal');
-        currentY += 15;
-
-        // Render template body (full content, no truncation)
-        currentY = renderHtmlInPdf(doc, bodyTemplate, {
-            startX: margin,
-            startY: currentY,
-            maxWidth: contentWidth,
-            margin: margin,
-            pageHeight: pageHeight,
-            imageMap: imageMap
-        });
-
-        currentY += 10;
-
-        // Example section (if template has parameters)
-        if (containsParameters) {
-            const randomStudentPayload = emails[Math.floor(Math.random() * emails.length)];
-
-            // Estimate height needed for example section
-            const estimatedExampleHeight = estimateHtmlHeight(doc, randomStudentPayload.body, contentWidth, imageMap);
-            const spaceRemaining = pageHeight - margin - currentY;
-
-            // If example won't fit on current page, start new page
-            if (estimatedExampleHeight > spaceRemaining) {
-                doc.addPage();
-                currentY = margin;
+        if (preview && preview.width && preview.height) {
+            let drawW = contentWidth;
+            let drawH = contentWidth * (preview.height / preview.width);
+            // Shrink-to-fit so the whole message stays on this one page.
+            if (drawH > availableHeight) {
+                drawW = drawW * (availableHeight / drawH);
+                drawH = availableHeight;
             }
-
-            doc.setFont(undefined, 'bold');
-            doc.text("Example:", margin, currentY);
-            doc.setFont(undefined, 'normal');
-            currentY += 15;
-
-            // Render example body (full content, no truncation)
-            currentY = renderHtmlInPdf(doc, randomStudentPayload.body, {
+            const drawX = margin + (contentWidth - drawW) / 2; // center if narrowed
+            try {
+                doc.addImage(preview.dataUrl, 'JPEG', drawX, currentY, drawW, drawH);
+            } catch (err) {
+                console.warn('Failed to place email preview:', err);
+            }
+        } else {
+            // Fallback: text-based rendering (still includes images + emoji).
+            const imageMap = await prepareReceiptImageMap([previewEmail.body]);
+            doc.setFontSize(10);
+            renderHtmlInPdf(doc, previewEmail.body, {
                 startX: margin,
                 startY: currentY,
                 maxWidth: contentWidth,
@@ -469,8 +498,6 @@ export async function generatePdfReceipt(emails, bodyTemplate, initiator = {}, r
                 pageHeight: pageHeight,
                 imageMap: imageMap
             });
-
-            currentY += 10;
         }
 
         // Recipient list on a new page

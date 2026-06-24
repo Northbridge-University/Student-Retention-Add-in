@@ -18,6 +18,7 @@
     "docx": "^9.6.1",
     "exceljs": "^4.4.0",
     "github-markdown-css": "^5.8.1",
+    "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.7",
     "liquid-glass-react": "^1.1.1",
