@@ -1081,7 +1081,7 @@ export default function PersonalizedEmail({ user, onReady }) {
         let payloadToSend = payload;
         if (powerAutomateConnection?.includeReceipt === true) {
             const initiator = { name: user, email: userEmail };
-            const receiptBase64 = generatePdfReceipt(
+            const receiptBase64 = await generatePdfReceipt(
                 payload.emails,
                 currentBody,
                 initiator,
@@ -1234,7 +1234,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                 let testPayloadToSend = testPayload;
                 if (powerAutomateConnection?.includeReceipt === true) {
                     const initiator = { name: user, email: userEmail };
-                    const receiptBase64 = generatePdfReceipt(
+                    const receiptBase64 = await generatePdfReceipt(
                         testPayload.emails,
                         currentBody,
                         initiator,
