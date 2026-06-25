@@ -6,15 +6,24 @@ import { normalizeEmailKey } from '../utils/helpers';
 import { compressImagesInHtml } from '../utils/imageCompression';
 import EmailAutocompleteInput from '../components/EmailAutocompleteInput';
 
-// Manages the per-From-address signatures that power the {Signature} special
-// parameter. Each entry maps a From email to a rich-text signature; at send
-// time {Signature} resolves to the signature assigned to that email's From.
+// Configurable special parameters shown in the modal's landing list. Only
+// Signature is configurable today; add more entries here as they gain setup.
+const SPECIAL_PARAM_CONFIGS = [
+    { key: 'signature', token: '{Signature}', description: 'Assign a signature to each From address.' },
+];
+
+// Modal for configuring special parameters. Opens to a list of configurable
+// parameters; selecting one (currently only Signature) opens its setup. The
+// Signature setup maps each From email to a rich-text signature that powers the
+// {Signature} parameter at send time.
 export default function SignatureModal({ isOpen, onClose, signatures, onSave, currentFrom, suggestions = [] }) {
+    const [view, setView] = useState('list'); // 'list' | 'signature'
     const [entries, setEntries] = useState([]);
     const [saveStatus, setSaveStatus] = useState('');
 
     useEffect(() => {
         if (isOpen) {
+            setView('list');
             // Work on a copy so Cancel discards unsaved edits.
             const copy = (signatures || []).map(s => ({ email: s.email || '', signature: s.signature || '' }));
             // Offer the current From address as a starter row when nothing is set up yet.
@@ -67,11 +76,82 @@ export default function SignatureModal({ isOpen, onClose, signatures, onSave, cu
 
     if (!isOpen) return null;
 
+    // Landing list of configurable special parameters.
+    if (view === 'list') {
+        const signatureCount = (signatures || []).filter(s => s && s.email).length;
+        return (
+            <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-start justify-center z-50 overflow-y-auto p-4">
+                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl my-8 max-h-[calc(100vh-4rem)] overflow-y-auto">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-lg font-semibold text-gray-800">Special Parameters</h3>
+                        <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Close">
+                            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-4">
+                        Configure how special parameters resolve when you send. Select one to set it up.
+                    </p>
+
+                    <div className="border-t border-b py-2">
+                        {SPECIAL_PARAM_CONFIGS.map(cfg => (
+                            <button
+                                key={cfg.key}
+                                onClick={() => setView(cfg.key)}
+                                className="w-full flex items-center justify-between gap-3 p-3 my-1 rounded-md hover:bg-gray-50 text-left"
+                            >
+                                <span>
+                                    <span className="px-2 py-1 text-sm font-medium rounded bg-orange-100 text-orange-800 font-mono">
+                                        {cfg.token}
+                                    </span>
+                                    <span className="block text-xs text-gray-500 mt-1">
+                                        {cfg.description}
+                                        {cfg.key === 'signature' && (
+                                            <span className="text-gray-400">
+                                                {' '}({signatureCount} {signatureCount === 1 ? 'signature' : 'signatures'} set)
+                                            </span>
+                                        )}
+                                    </span>
+                                </span>
+                                <svg className="h-5 w-5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex justify-end mt-4">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Signature setup view.
     return (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-start justify-center z-50 overflow-y-auto p-4">
             <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl my-8 max-h-[calc(100vh-4rem)] overflow-y-auto">
                 <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-lg font-semibold text-gray-800">Email Signatures</h3>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setView('list')}
+                            className="text-gray-400 hover:text-gray-600"
+                            aria-label="Back to special parameters"
+                            title="Back"
+                        >
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+                        <h3 className="text-lg font-semibold text-gray-800">Email Signatures</h3>
+                    </div>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Close">
                         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -137,10 +217,10 @@ export default function SignatureModal({ isOpen, onClose, signatures, onSave, cu
 
                 <div className="flex justify-end gap-2 mt-4 border-t pt-4">
                     <button
-                        onClick={onClose}
+                        onClick={() => setView('list')}
                         className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
                     >
-                        Cancel
+                        Back
                     </button>
                     <button
                         onClick={handleSave}
