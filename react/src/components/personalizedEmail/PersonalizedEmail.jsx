@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import PillInput from './components/PillInput';
-import { EMAIL_TEMPLATES_KEY, CUSTOM_PARAMS_KEY, LAST_EMAIL_SENT_KEY, standardParameters, specialParameters, QUILL_EDITOR_CONFIG, PARAMETER_BUTTON_STYLES, COLUMN_MAPPINGS } from './utils/constants';
-import { findColumnIndex, normalizeHeader, getTodaysLdaSheetName, formatLastSentStamp, getNameParts, isValidEmail, isValidHttpUrl, evaluateMapping, renderTemplate, renderCCTemplate, generateMissingAssignmentsList, buildMissingAssignmentsCache } from './utils/helpers';
+import { EMAIL_TEMPLATES_KEY, CUSTOM_PARAMS_KEY, EMAIL_SIGNATURES_KEY, LAST_EMAIL_SENT_KEY, standardParameters, specialParameters, QUILL_EDITOR_CONFIG, PARAMETER_BUTTON_STYLES, COLUMN_MAPPINGS } from './utils/constants';
+import { findColumnIndex, normalizeHeader, getTodaysLdaSheetName, formatLastSentStamp, getNameParts, isValidEmail, isValidHttpUrl, evaluateMapping, renderTemplate, renderCCTemplate, findSignature, generateMissingAssignmentsList, buildMissingAssignmentsCache } from './utils/helpers';
 import { generatePdfReceipt } from './utils/receiptGenerator';
 import { compressDataUriImage, dataUriByteLength, formatBytes, IMAGE_COMPRESS_THRESHOLD_BYTES } from './utils/imageCompression';
 import { downloadMailMergeTemplate, extractFieldNames } from './utils/docxGenerator';
@@ -12,6 +12,7 @@ import DownloadModal from './modals/DownloadModal';
 import ExampleModal from './modals/ExampleModal';
 import TemplatesModal from './modals/TemplatesModal';
 import CustomParamModal from './modals/CustomParamModal';
+import SignatureModal from './modals/SignatureModal';
 import RecipientModal from './modals/RecipientModal';
 import ConfirmSendModal from './modals/ConfirmSendModal';
 import SuccessModal from './modals/SuccessModal';
@@ -38,6 +39,7 @@ export default function PersonalizedEmail({ user, onReady }) {
     const [studentDataCache, setStudentDataCache] = useState([]);
     const [cachedSpecialParams, setCachedSpecialParams] = useState([]);
     const [customParameters, setCustomParameters] = useState([]);
+    const [signatures, setSignatures] = useState([]);
     const [recipientSelection, setRecipientSelection] = useState({
         type: 'lda',
         customSheetName: '',
@@ -73,6 +75,7 @@ export default function PersonalizedEmail({ user, onReady }) {
     const [showExampleModal, setShowExampleModal] = useState(false);
     const [showTemplatesModal, setShowTemplatesModal] = useState(false);
     const [showCustomParamModal, setShowCustomParamModal] = useState(false);
+    const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [showRecipientModal, setShowRecipientModal] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -101,6 +104,7 @@ export default function PersonalizedEmail({ user, onReady }) {
             await Promise.all([
                 checkConnection(),
                 loadCustomParameters(),
+                loadSignatures(),
                 loadTemplates(),
                 loadLastSentInfo()
             ]);
@@ -285,6 +289,28 @@ export default function PersonalizedEmail({ user, onReady }) {
     const loadCustomParameters = async () => {
         const params = await getCustomParameters();
         setCustomParameters(params);
+    };
+
+    const loadSignatures = async () => {
+        try {
+            const loaded = await Excel.run(async (context) => {
+                const setting = context.workbook.settings.getItemOrNullObject(EMAIL_SIGNATURES_KEY);
+                setting.load("value");
+                await context.sync();
+                return setting.value ? JSON.parse(setting.value) : [];
+            });
+            setSignatures(Array.isArray(loaded) ? loaded : []);
+        } catch (error) {
+            console.error('Error loading signatures:', error);
+        }
+    };
+
+    const saveSignatures = async (newSignatures) => {
+        await Excel.run(async (context) => {
+            context.workbook.settings.add(EMAIL_SIGNATURES_KEY, JSON.stringify(newSignatures));
+            await context.sync();
+        });
+        setSignatures(newSignatures);
     };
 
     const loadTemplates = async () => {
@@ -778,7 +804,12 @@ export default function PersonalizedEmail({ user, onReady }) {
     };
 
     const handleOpenConfirmModal = async () => {
-        await ensureStudentDataLoaded();
+        const data = await ensureStudentDataLoaded();
+        const missing = getMissingSignatureFroms(data);
+        if (missing.length > 0) {
+            setStatus(`No signature set for: ${missing.join(', ')}. Add one with the pencil icon next to "Special Parameters" before sending.`);
+            return;
+        }
         setShowConfirmModal(true);
     };
 
@@ -1027,18 +1058,41 @@ export default function PersonalizedEmail({ user, onReady }) {
     // state hasn't caught up to yet.
     const getCurrentBodyHtml = () => quillRef.current?.getEditor?.()?.root.innerHTML ?? body;
 
+    // The {Signature} special parameter resolves per-email from the rendered
+    // From address, so it can't be precomputed in the student data cache.
+    const getMissingSignatureFroms = (students) => {
+        if (!isParameterUsedInTemplate('Signature')) return [];
+        const fromTemplate = fromPills[0] || '';
+        const data = (students && students.length) ? students : studentDataCache;
+        const froms = new Set();
+        if (data && data.length) {
+            data.forEach(student => {
+                const from = renderTemplate(fromTemplate, student);
+                if (from && from.trim()) froms.add(from.trim());
+            });
+        } else if (fromTemplate.trim()) {
+            froms.add(fromTemplate.trim());
+        }
+        return [...froms].filter(from => !findSignature(signatures, from));
+    };
+
     const generatePayload = (bodyHtml = body) => {
         const fromTemplate = fromPills[0] || '';
         // Strip parameter backgrounds from body before rendering
         const cleanBodyHtml = stripParameterBackgrounds(bodyHtml);
 
-        const emails = studentDataCache.map(student => ({
-            from: renderTemplate(fromTemplate, student),
-            to: student.StudentEmail || '',
-            cc: renderCCTemplate(ccPills, student),
-            subject: renderTemplate(subject, student),
-            body: renderTemplate(cleanBodyHtml, student)
-        })).filter(email => email.to && email.from);
+        const emails = studentDataCache.map(student => {
+            const from = renderTemplate(fromTemplate, student);
+            // Inject the From-specific signature so {Signature} renders correctly.
+            const studentWithSignature = { ...student, Signature: findSignature(signatures, from) };
+            return {
+                from,
+                to: student.StudentEmail || '',
+                cc: renderCCTemplate(ccPills, studentWithSignature),
+                subject: renderTemplate(subject, studentWithSignature),
+                body: renderTemplate(cleanBodyHtml, studentWithSignature)
+            };
+        }).filter(email => email.to && email.from);
 
         // Calculate sender breakdown
         const senderCounts = emails.reduce((acc, email) => {
@@ -1073,6 +1127,12 @@ export default function PersonalizedEmail({ user, onReady }) {
 
         if (payload.emails.length === 0) {
             setStatus('No students with valid "To" and "From" email addresses found.');
+            return;
+        }
+
+        const missingSignatures = getMissingSignatureFroms(studentDataCache);
+        if (missingSignatures.length > 0) {
+            setStatus(`No signature set for: ${missingSignatures.join(', ')}. Add one with the pencil icon next to "Special Parameters" before sending.`);
             return;
         }
 
@@ -1210,6 +1270,14 @@ export default function PersonalizedEmail({ user, onReady }) {
         const cleanBodyHtml = stripParameterBackgrounds(currentBody);
         const testFromEmail = renderTemplate(fromTemplate, testStudent);
 
+        if (isParameterUsedInTemplate('Signature') && !findSignature(signatures, testFromEmail)) {
+            setStatus(`No signature set for ${testFromEmail || 'the From address'}. Add one with the pencil icon next to "Special Parameters" before sending.`);
+            return;
+        }
+
+        // Inject the From-specific signature so {Signature} renders in the test.
+        const testStudentWithSignature = { ...testStudent, Signature: findSignature(signatures, testFromEmail) };
+
         const testPayload = {
             byName: user || '',
             byEmail: userEmail || '',
@@ -1219,8 +1287,8 @@ export default function PersonalizedEmail({ user, onReady }) {
                 from: testFromEmail,
                 to: userEmail, // Always send to the logged-in user
                 cc: '', // Don't CC anyone on test emails
-                subject: `[TEST] ${renderTemplate(subject, testStudent)}`,
-                body: renderTemplate(cleanBodyHtml, testStudent)
+                subject: `[TEST] ${renderTemplate(subject, testStudentWithSignature)}`,
+                body: renderTemplate(cleanBodyHtml, testStudentWithSignature)
             }]
         };
 
@@ -1487,7 +1555,20 @@ export default function PersonalizedEmail({ user, onReady }) {
 
                             {specialParameters.length > 0 && (
                                 <div className="mt-3">
-                                    <label className="block text-xs font-medium text-gray-600 mb-2">Special Parameters</label>
+                                    <div className="flex items-center gap-1 mb-2">
+                                        <label className="text-xs font-medium text-gray-600">Special Parameters</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowSignatureModal(true)}
+                                            aria-label="Manage signatures"
+                                            title="Manage signatures for the {Signature} parameter"
+                                            className="p-0.5 text-gray-400 hover:text-blue-600"
+                                        >
+                                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        </button>
+                                    </div>
                                     <div className="flex flex-wrap gap-2">
                                         {specialParameters.map(param => renderParameterButton(param))}
                                     </div>
@@ -1617,6 +1698,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                 ccRecipients={ccPills}
                 subjectTemplate={subject}
                 bodyTemplate={body}
+                signatures={signatures}
             />
 
             <TemplatesModal
@@ -1643,6 +1725,14 @@ export default function PersonalizedEmail({ user, onReady }) {
                 onClose={() => setShowCustomParamModal(false)}
                 customParameters={customParameters}
                 onSave={saveCustomParameters}
+            />
+
+            <SignatureModal
+                isOpen={showSignatureModal}
+                onClose={() => setShowSignatureModal(false)}
+                signatures={signatures}
+                onSave={saveSignatures}
+                currentFrom={fromPills[0] || ''}
             />
 
             <RecipientModal
