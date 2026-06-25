@@ -17,6 +17,7 @@ import RecipientModal from './modals/RecipientModal';
 import ConfirmSendModal from './modals/ConfirmSendModal';
 import SuccessModal from './modals/SuccessModal';
 import { getWorkbookSettings } from '../utility/getSettings';
+import { getWorkbookUsers } from '../../services/workbookUsers';
 import { MASTER_LIST_SHEET, HISTORY_SHEET } from '../../../../shared/constants.js';
 
 export default function PersonalizedEmail({ user, onReady }) {
@@ -40,6 +41,8 @@ export default function PersonalizedEmail({ user, onReady }) {
     const [cachedSpecialParams, setCachedSpecialParams] = useState([]);
     const [customParameters, setCustomParameters] = useState([]);
     const [signatures, setSignatures] = useState([]);
+    // Email suggestions for the From/CC fields, sourced from registered workbook users.
+    const [addressSuggestions, setAddressSuggestions] = useState([]);
     const [recipientSelection, setRecipientSelection] = useState({
         type: 'lda',
         customSheetName: '',
@@ -130,6 +133,25 @@ export default function PersonalizedEmail({ user, onReady }) {
     useEffect(() => () => {
         if (imageNoticeTimerRef.current) clearTimeout(imageNoticeTimerRef.current);
         if (compressImagesTimerRef.current) clearTimeout(compressImagesTimerRef.current);
+    }, []);
+
+    // Load registered workbook users once for From/CC email autocomplete.
+    useEffect(() => {
+        try {
+            const seen = new Set();
+            const suggestions = [];
+            (getWorkbookUsers() || []).forEach(u => {
+                const email = (u.email || '').trim();
+                if (!email) return;
+                const key = email.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                suggestions.push({ name: (u.name || '').trim(), email });
+            });
+            setAddressSuggestions(suggestions);
+        } catch (error) {
+            console.error('Error loading workbook users for autocomplete:', error);
+        }
     }, []);
 
     // Setup automatic parameter highlighting
@@ -1445,6 +1467,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                         readOnly={mode === 'individual'}
                         noWrap={true}
                         getPillColor={getParameterColor}
+                        suggestions={addressSuggestions}
                     />
                 </div>
 
@@ -1485,6 +1508,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                             onFocus={() => setLastFocusedInput('cc')}
                             noWrap={true}
                             getPillColor={getParameterColor}
+                            suggestions={addressSuggestions}
                         />
                     </div>
                 )}
