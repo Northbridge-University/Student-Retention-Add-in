@@ -43,6 +43,42 @@ export function formatBytes(bytes) {
 }
 
 /**
+ * Compress any oversized data-URI images inside an HTML string and return the
+ * updated HTML. Used for content authored outside the main editor (e.g. saved
+ * signatures), which would otherwise embed full-size images that repeat across
+ * every recipient and bloat the payload. Non-image and remote sources are left
+ * untouched. Falls back to the original HTML if parsing/compression isn't
+ * possible (e.g. outside a browser).
+ * @param {string} html
+ * @returns {Promise<string>}
+ */
+export async function compressImagesInHtml(html) {
+    if (!html || typeof html !== 'string' || !html.includes('<img')) return html;
+    if (typeof DOMParser === 'undefined') return html;
+
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const imgs = Array.from(doc.querySelectorAll('img'));
+    let changed = false;
+
+    await Promise.all(imgs.map(async (img) => {
+        const src = img.getAttribute('src') || '';
+        if (src.startsWith('data:image') && dataUriByteLength(src) > IMAGE_COMPRESS_THRESHOLD_BYTES) {
+            try {
+                const compressed = await compressDataUriImage(src);
+                if (compressed) {
+                    img.setAttribute('src', compressed);
+                    changed = true;
+                }
+            } catch {
+                // Keep the original image if compression fails.
+            }
+        }
+    }));
+
+    return changed ? doc.body.innerHTML : html;
+}
+
+/**
  * Downscale + re-encode a base64 image data-URI so it's small enough to embed in
  * the email payload. Resolves to a new JPEG data-URI, or rejects if the image
  * can't be loaded/encoded (e.g. a tainted or unsupported source).

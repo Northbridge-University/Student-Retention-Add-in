@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { renderTemplate, renderCCTemplate } from '../utils/helpers';
+import { renderTemplate, renderCCTemplate, findSignature } from '../utils/helpers';
 
-export default function ExampleModal({ isOpen, onClose, studentData, fromTemplate, ccRecipients, subjectTemplate, bodyTemplate }) {
+export default function ExampleModal({ isOpen, onClose, studentData, fromTemplate, ccRecipients, subjectTemplate, bodyTemplate, signatures }) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [showSearch, setShowSearch] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -20,10 +20,12 @@ export default function ExampleModal({ isOpen, onClose, studentData, fromTemplat
 
     const student = studentData[currentIndex];
     const from = renderTemplate(fromTemplate, student);
+    // Inject the From-specific signature so {Signature} previews correctly.
+    const studentWithSignature = { ...student, Signature: findSignature(signatures, from) };
     const to = student.StudentEmail || '[No Email]';
-    const cc = renderCCTemplate(ccRecipients, student);
-    const subject = renderTemplate(subjectTemplate, student);
-    const body = renderTemplate(bodyTemplate, student);
+    const cc = renderCCTemplate(ccRecipients, studentWithSignature);
+    const subject = renderTemplate(subjectTemplate, studentWithSignature);
+    const body = renderTemplate(bodyTemplate, studentWithSignature);
 
     const handlePrevious = () => {
         if (currentIndex > 0) setCurrentIndex(currentIndex - 1);

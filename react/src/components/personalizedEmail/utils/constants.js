@@ -17,13 +17,15 @@ import {
 
 export const EMAIL_TEMPLATES_KEY = "emailTemplates";
 export const CUSTOM_PARAMS_KEY = "customEmailParameters";
+export const EMAIL_SIGNATURES_KEY = "emailSignatures";
 export const LAST_EMAIL_SENT_KEY = "lastEmailSent";
 
 // Standard, built-in parameters that are always available
 export const standardParameters = ['FirstName', 'LastName', 'StudentEmail', 'PersonalEmail', 'Grade', 'DaysOut', 'Assigned'];
 
-// Special built-in parameters (more advanced, dynamically generated)
-export const specialParameters = ['MissingAssignmentsList', 'DaysLeft', 'Salutation'];
+// Special built-in parameters (more advanced, dynamically generated).
+// Signature resolves per-email from the From address (see emailSignatures).
+export const specialParameters = ['MissingAssignmentsList', 'DaysLeft', 'Salutation', 'Signature'];
 
 // Configuration for the main rich text editor
 export const QUILL_EDITOR_CONFIG = {
