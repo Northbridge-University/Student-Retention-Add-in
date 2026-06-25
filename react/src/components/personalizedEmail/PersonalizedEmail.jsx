@@ -1250,6 +1250,39 @@ export default function PersonalizedEmail({ user, onReady }) {
         }
     };
 
+    const handlePreviewReceipt = async () => {
+        setShowSendContextMenu(false);
+
+        // Need at least From, Subject, and Body for a meaningful receipt.
+        const from = fromPills[0] || '';
+        if (!from.trim() || !subject.trim() || !body.trim()) {
+            setStatus('Please fill in From, Subject, and Body to preview a receipt.');
+            return;
+        }
+
+        setStatus('Generating receipt...');
+        try {
+            await ensureStudentDataLoaded();
+            await compressOversizedImages();
+            const currentBody = getCurrentBodyHtml();
+            const payload = generatePayload(currentBody);
+
+            if (payload.emails.length === 0) {
+                setStatus('No students with valid "To" and "From" email addresses found.');
+                return;
+            }
+
+            // returnBase64 omitted → generatePdfReceipt saves (downloads) the PDF.
+            const initiator = { name: user, email: userEmail };
+            await generatePdfReceipt(payload.emails, currentBody, initiator);
+            setStatus('Receipt downloaded.');
+            setTimeout(() => setStatus(''), 3000);
+        } catch (error) {
+            setStatus(`Failed to generate receipt: ${error.message}`);
+            console.error('Error generating receipt preview:', error);
+        }
+    };
+
     const handleSendTestEmail = async () => {
         setShowSendContextMenu(false);
 
@@ -1682,12 +1715,18 @@ export default function PersonalizedEmail({ user, onReady }) {
                         )}
                         {/* Context Menu for Send Button */}
                         {showSendContextMenu && (
-                            <div className="absolute bottom-full left-0 mb-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                            <div className="absolute bottom-full left-0 mb-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
                                 <button
                                     onClick={handleSendTestEmail}
-                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
                                 >
                                     Send Test Email to myself
+                                </button>
+                                <button
+                                    onClick={handlePreviewReceipt}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                >
+                                    Preview Receipt
                                 </button>
                             </div>
                         )}
