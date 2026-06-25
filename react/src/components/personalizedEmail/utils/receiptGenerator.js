@@ -146,36 +146,73 @@ async function urlToDataUri(url, timeoutMs = 8000) {
     }
 }
 
-// Normalize every <img> in the preview so html2canvas can rasterize it. Images
-// that arrive via a parameter value bypass the editor's compression, so they
-// can be large uncompressed data-URIs (re-encode them) or remote URLs (inline
-// them). Both are otherwise prone to being dropped from the canvas.
+// Draw an already-loaded <img> onto a canvas and read it back as a data-URI.
+// Works for same-origin and blob: images; returns null if the image is
+// cross-origin (the canvas would be tainted) or hasn't decoded.
+function dataUriFromLoadedImg(img) {
+    try {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        if (!w || !h) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        return canvas.toDataURL('image/png');
+    } catch {
+        return null; // tainted (cross-origin) or otherwise unreadable
+    }
+}
+
+// Normalize every <img> in the preview so html2canvas can rasterize it. The
+// receipt is a canvas screenshot, so it must be able to READ each image's
+// pixels — unlike the editor/email, which only display them. We convert every
+// image to a clean data-URI ahead of html2canvas, covering all the ways an
+// image can arrive: embedded data-URIs (re-encoded), same-origin/blob: images
+// (read off the loaded element), and cross-origin URLs (fetched directly, then
+// via a CORS proxy). Anything we still can't inline is logged for diagnosis.
 async function normalizeImagesForCapture(container) {
+    // Let the images load first so we can read the already-rendered ones.
+    await waitForImages(container);
+
     const imgs = Array.from(container.querySelectorAll('img'));
     await Promise.all(imgs.map(async (img) => {
         const src = img.getAttribute('src') || '';
         try {
             if (src.startsWith('data:image')) {
-                // Re-encode EVERY data-URI through the canvas, not just oversized
-                // ones. Some pasted data-URIs (notably images pulled in via a
-                // signature or other parameter) render fine in email clients but
-                // get dropped by html2canvas; a clean canvas re-encode fixes that.
-                // Oversized images are also downscaled. On failure the original
-                // src is kept, so this can't regress an image that already worked.
                 const compressed = await compressDataUriImage(src, { maxDimension: 1280, quality: 0.85 });
                 if (compressed) img.setAttribute('src', compressed);
-            } else if (/^https?:\/\//i.test(src)) {
-                // Try a direct fetch first (same-origin / CORS-enabled hosts);
-                // fall back to the image proxy for hosts that don't send CORS
-                // headers (e.g. a hosted signature logo).
-                let dataUri = await urlToDataUri(src);
-                if (!dataUri) dataUri = await urlToDataUri(proxiedImageUrl(src));
-                if (dataUri) img.setAttribute('src', dataUri);
+                return;
             }
-        } catch {
-            // Leave the original src; html2canvas will do its best.
+
+            // Same-origin and blob: images can be read straight off the element.
+            const fromElement = dataUriFromLoadedImg(img);
+            if (fromElement) {
+                img.setAttribute('src', fromElement);
+                return;
+            }
+
+            // Cross-origin: fetch it (resolving protocol-relative URLs), then fall
+            // back to the CORS proxy for hosts that don't send CORS headers.
+            const absolute = src.startsWith('//') ? `https:${src}` : src;
+            if (/^https?:\/\//i.test(absolute)) {
+                let dataUri = await urlToDataUri(absolute);
+                if (!dataUri) dataUri = await urlToDataUri(proxiedImageUrl(absolute));
+                if (dataUri) {
+                    img.setAttribute('src', dataUri);
+                } else {
+                    console.warn('[receipt] could not inline image:', src.slice(0, 120));
+                }
+            } else if (src) {
+                console.warn('[receipt] unsupported image src for receipt:', src.slice(0, 120));
+            }
+        } catch (err) {
+            console.warn('[receipt] image normalize failed:', src.slice(0, 120), err);
         }
     }));
+
+    // Wait again for any images whose src we swapped.
+    await waitForImages(container);
 }
 
 // Wait for every <img> in a container to finish decoding so html2canvas
@@ -183,7 +220,9 @@ async function normalizeImagesForCapture(container) {
 function waitForImages(container) {
     const imgs = Array.from(container.querySelectorAll('img'));
     return Promise.all(imgs.map((img) => {
-        if (img.complete && img.naturalWidth) return Promise.resolve();
+        // Resolve on `complete` whether it loaded or errored — guarding on
+        // naturalWidth would hang forever on an image that already failed.
+        if (img.complete) return Promise.resolve();
         return new Promise((resolve) => {
             img.onload = () => resolve();
             img.onerror = () => resolve();
