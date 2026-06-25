@@ -1757,6 +1757,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                 signatures={signatures}
                 onSave={saveSignatures}
                 currentFrom={fromPills[0] || ''}
+                suggestions={addressSuggestions}
             />
 
             <RecipientModal

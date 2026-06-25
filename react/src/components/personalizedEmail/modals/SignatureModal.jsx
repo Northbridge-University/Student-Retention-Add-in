@@ -4,11 +4,12 @@ import 'react-quill-new/dist/quill.snow.css';
 import { QUILL_EDITOR_CONFIG } from '../utils/constants';
 import { normalizeEmailKey } from '../utils/helpers';
 import { compressImagesInHtml } from '../utils/imageCompression';
+import EmailAutocompleteInput from '../components/EmailAutocompleteInput';
 
 // Manages the per-From-address signatures that power the {Signature} special
 // parameter. Each entry maps a From email to a rich-text signature; at send
 // time {Signature} resolves to the signature assigned to that email's From.
-export default function SignatureModal({ isOpen, onClose, signatures, onSave, currentFrom }) {
+export default function SignatureModal({ isOpen, onClose, signatures, onSave, currentFrom, suggestions = [] }) {
     const [entries, setEntries] = useState([]);
     const [saveStatus, setSaveStatus] = useState('');
 
@@ -101,12 +102,12 @@ export default function SignatureModal({ isOpen, onClose, signatures, onSave, cu
                                     </button>
                                 </div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">From address</label>
-                                <input
-                                    type="text"
+                                <EmailAutocompleteInput
                                     value={entry.email}
-                                    onChange={(e) => handleEntryChange(index, 'email', e.target.value)}
+                                    onChange={(value) => handleEntryChange(index, 'email', value)}
+                                    suggestions={suggestions}
+                                    placeholder="Type a name or email, e.g. advisor@school.edu"
                                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm bg-white"
-                                    placeholder="e.g., advisor@school.edu"
                                 />
                                 <label className="block text-sm font-medium text-gray-700 mt-3 mb-1">Signature</label>
                                 <div className="bg-white rounded-md">
