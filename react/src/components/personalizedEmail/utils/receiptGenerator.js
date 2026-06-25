@@ -109,11 +109,29 @@ function escapeHtml(value) {
         .replace(/"/g, '&quot;');
 }
 
+// Free image proxy that re-serves cross-origin images with permissive CORS
+// headers, so the receipt canvas can read hosted images (e.g. a copied
+// signature's logo) the browser would otherwise block. Only used as a fallback
+// when a direct fetch is refused.
+const IMAGE_PROXY_BASE = 'https://images.weserv.nl/?url=';
+function proxiedImageUrl(url) {
+    return `${IMAGE_PROXY_BASE}${encodeURIComponent(url)}`;
+}
+
 // Fetch a remote image and convert it to a data-URI so it can be rasterized.
-// Returns null if it can't be fetched (e.g. cross-origin without CORS headers).
-async function urlToDataUri(url) {
+// Returns null if it can't be fetched (e.g. cross-origin without CORS headers,
+// a non-image response, or a timeout — so a slow/down host can't hang the
+// receipt).
+async function urlToDataUri(url, timeoutMs = 8000) {
     try {
-        const response = await fetch(url, { mode: 'cors' });
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+        let response;
+        try {
+            response = await fetch(url, { mode: 'cors', signal: controller ? controller.signal : undefined });
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
         if (!response.ok) return null;
         const blob = await response.blob();
         if (!blob.type.startsWith('image/')) return null;
@@ -147,7 +165,11 @@ async function normalizeImagesForCapture(container) {
                 const compressed = await compressDataUriImage(src, { maxDimension: 1280, quality: 0.85 });
                 if (compressed) img.setAttribute('src', compressed);
             } else if (/^https?:\/\//i.test(src)) {
-                const dataUri = await urlToDataUri(src);
+                // Try a direct fetch first (same-origin / CORS-enabled hosts);
+                // fall back to the image proxy for hosts that don't send CORS
+                // headers (e.g. a hosted signature logo).
+                let dataUri = await urlToDataUri(src);
+                if (!dataUri) dataUri = await urlToDataUri(proxiedImageUrl(src));
                 if (dataUri) img.setAttribute('src', dataUri);
             }
         } catch {
