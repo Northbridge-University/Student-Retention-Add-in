@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { getTodaysLdaSheetName } from './helpers';
 import { tokenizeRichText } from './emojiText';
-import { compressDataUriImage, dataUriByteLength, IMAGE_COMPRESS_THRESHOLD_BYTES } from './imageCompression';
+import { compressDataUriImage } from './imageCompression';
 
 // Cache of rasterized emoji so the same glyph isn't re-rendered to a canvas
 // repeatedly within one receipt. Keyed by `${emoji}@${size}`.
@@ -138,10 +138,14 @@ async function normalizeImagesForCapture(container) {
         const src = img.getAttribute('src') || '';
         try {
             if (src.startsWith('data:image')) {
-                if (dataUriByteLength(src) > IMAGE_COMPRESS_THRESHOLD_BYTES) {
-                    const compressed = await compressDataUriImage(src, { maxDimension: 1280, quality: 0.8 });
-                    if (compressed) img.setAttribute('src', compressed);
-                }
+                // Re-encode EVERY data-URI through the canvas, not just oversized
+                // ones. Some pasted data-URIs (notably images pulled in via a
+                // signature or other parameter) render fine in email clients but
+                // get dropped by html2canvas; a clean canvas re-encode fixes that.
+                // Oversized images are also downscaled. On failure the original
+                // src is kept, so this can't regress an image that already worked.
+                const compressed = await compressDataUriImage(src, { maxDimension: 1280, quality: 0.85 });
+                if (compressed) img.setAttribute('src', compressed);
             } else if (/^https?:\/\//i.test(src)) {
                 const dataUri = await urlToDataUri(src);
                 if (dataUri) img.setAttribute('src', dataUri);
