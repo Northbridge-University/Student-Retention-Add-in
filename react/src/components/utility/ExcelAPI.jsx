@@ -619,8 +619,15 @@ export async function clearRowFill(rowIndex, startCol, colCount) {
  * @param {string|null} color - Fill color (e.g. 'yellow'); pass null to clear
  * @param {string[][]} skipAliasGroups - Arrays of header aliases (e.g.
  *        [ASSIGNED_ALIASES]) — any matching column is left untouched
+ * @param {Object} [options]
+ * @param {string|null} [options.clearOnlyIfColor] - When clearing (color is
+ *        null), only clear a segment if its existing fill matches this color
+ *        (case-insensitive hex, e.g. '#FFFF00'). Segments with any other color
+ *        — or mixed colors — are left untouched. Prevents the Outreach
+ *        auto-highlight from wiping highlights applied in other colors.
  */
-export async function setRowSegmentFill(rowIndex, endColIdx, color, skipAliasGroups = []) {
+export async function setRowSegmentFill(rowIndex, endColIdx, color, skipAliasGroups = [], options = {}) {
+  const { clearOnlyIfColor = null } = options || {};
   if (typeof window.Excel === 'undefined') return;
   if (typeof rowIndex !== 'number' || typeof endColIdx !== 'number') return;
   if (rowIndex < 0 || endColIdx < 0) return;
@@ -657,12 +664,31 @@ export async function setRowSegmentFill(rowIndex, endColIdx, color, skipAliasGro
       }
       if (segStart <= endColIdx) segments.push([segStart, endColIdx - segStart + 1]);
 
-      for (const [start, count] of segments) {
-        const rng = sheet.getRangeByIndexes(rowIndex, start, 1, count);
-        if (color === null || color === undefined) {
-          rng.format.fill.clear();
-        } else {
-          rng.format.fill.color = color;
+      const clearing = (color === null || color === undefined);
+
+      if (clearing && clearOnlyIfColor) {
+        // Conditional clear: only wipe segments whose existing fill matches the
+        // target color. Load each segment's color first, then clear matches.
+        const target = String(clearOnlyIfColor).toLowerCase();
+        const ranges = segments.map(([start, count]) => {
+          const rng = sheet.getRangeByIndexes(rowIndex, start, 1, count);
+          rng.format.fill.load('color');
+          return rng;
+        });
+        await context.sync();
+        for (const rng of ranges) {
+          if (String(rng.format.fill.color).toLowerCase() === target) {
+            rng.format.fill.clear();
+          }
+        }
+      } else {
+        for (const [start, count] of segments) {
+          const rng = sheet.getRangeByIndexes(rowIndex, start, 1, count);
+          if (clearing) {
+            rng.format.fill.clear();
+          } else {
+            rng.format.fill.color = color;
+          }
         }
       }
       await context.sync();
