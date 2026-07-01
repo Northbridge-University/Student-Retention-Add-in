@@ -14,7 +14,7 @@ import {
   Activity,
   Phone,
   Plus,
-  Trash2
+  Pencil
 } from 'lucide-react';
 import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -24,7 +24,7 @@ import EmergencyContactCard, { EmergencyContactSkeleton } from '../Parts/Emergen
 import {
   getEmergencyContacts,
   addEmergencyContact,
-  removeEmergencyContact
+  saveEmergencyContacts
 } from '../../../services/emergencyContacts';
 
 // A small reusable component for displaying a single detail item.
@@ -290,9 +290,11 @@ function StudentDetails({ student }) {
   // State for the "Add Emergency Contact" modal
   const [showAddEmergencyModal, setShowAddEmergencyModal] = useState(false);
 
-  // Saved emergency contacts for this student, plus a delete/manage toggle.
+  // Saved emergency contacts for this student, plus an edit-mode toggle.
   const [emergencyContacts, setEmergencyContacts] = useState([]);
-  const [emergencyDeleteMode, setEmergencyDeleteMode] = useState(false);
+  const [emergencyEditMode, setEmergencyEditMode] = useState(false);
+  // Working copy of the contacts while editing (committed on exit).
+  const [emergencyDraft, setEmergencyDraft] = useState([]);
   // True while a newly added contact is being persisted (shows a loading card).
   const [savingEmergency, setSavingEmergency] = useState(false);
 
@@ -301,7 +303,8 @@ function StudentDetails({ student }) {
 
   // Load saved emergency contacts whenever the viewed student changes.
   useEffect(() => {
-    setEmergencyDeleteMode(false);
+    setEmergencyEditMode(false);
+    setEmergencyDraft([]);
     setEmergencyContacts(getEmergencyContacts(studentId));
   }, [studentId]);
 
@@ -314,9 +317,32 @@ function StudentDetails({ student }) {
     setShowAddEmergencyModal(true);
   };
 
-  // The header trash button toggles a delete mode that reveals per-card removal.
-  const handleRemoveEmergency = () => {
-    setEmergencyDeleteMode((prev) => !prev);
+  // The header pencil button toggles edit mode. Entering edit takes a working
+  // copy of the contacts; clicking again saves the draft and closes the state.
+  const handleToggleEmergencyEdit = async () => {
+    if (!emergencyEditMode) {
+      setEmergencyDraft(emergencyContacts.map((c) => ({ ...c })));
+      setEmergencyEditMode(true);
+      return;
+    }
+    // Exiting edit mode — persist the draft.
+    const saved = await saveEmergencyContacts(studentId, emergencyDraft);
+    if (saved) setEmergencyContacts(saved);
+    setEmergencyEditMode(false);
+    setEmergencyDraft([]);
+  };
+
+  // Update a single field of a contact within the edit draft.
+  const handleEditEmergencyContact = (updatedContact) => {
+    setEmergencyDraft((prev) =>
+      prev.map((c) => (c.id === updatedContact.id ? updatedContact : c))
+    );
+  };
+
+  // Remove a contact from the edit draft (persisted when edit mode closes).
+  const handleRemoveEmergencyContact = (contact) => {
+    if (!contact || !contact.id) return;
+    setEmergencyDraft((prev) => prev.filter((c) => c.id !== contact.id));
   };
 
   const handleAddEmergencyContact = async (contact) => {
@@ -326,15 +352,6 @@ function StudentDetails({ student }) {
       if (updated) setEmergencyContacts(updated);
     } finally {
       setSavingEmergency(false);
-    }
-  };
-
-  const handleRemoveEmergencyContact = async (contact) => {
-    if (!contact || !contact.id) return;
-    const updated = await removeEmergencyContact(studentId, contact.id);
-    if (updated) {
-      setEmergencyContacts(updated);
-      if (updated.length === 0) setEmergencyDeleteMode(false);
     }
   };
 
@@ -380,31 +397,32 @@ function StudentDetails({ student }) {
                 <div className="relative">
                   <button
                     id="add-emergency-button"
-                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-green-500 transition-colors"
+                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-500"
                     aria-label="Add Emergency Number"
                     title="Add Emergency Number"
                     type="button"
                     onClick={handleAddEmergency}
+                    disabled={emergencyEditMode}
                   >
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="relative">
                   <button
-                    id="remove-emergency-button"
+                    id="edit-emergency-button"
                     className={`text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                      emergencyDeleteMode
-                        ? 'bg-red-400 hover:bg-red-500'
-                        : 'bg-gray-500 hover:bg-red-400'
+                      emergencyEditMode
+                        ? 'bg-green-500 hover:bg-green-600'
+                        : 'bg-gray-500 hover:bg-blue-400'
                     }`}
-                    aria-label="Remove Emergency Number"
-                    title={emergencyDeleteMode ? 'Done removing' : 'Remove Emergency Number'}
+                    aria-label={emergencyEditMode ? 'Save emergency contacts' : 'Edit emergency contacts'}
+                    title={emergencyEditMode ? 'Save & close' : 'Edit emergency contacts'}
                     type="button"
-                    aria-pressed={emergencyDeleteMode}
-                    onClick={handleRemoveEmergency}
-                    disabled={emergencyContacts.length === 0}
+                    aria-pressed={emergencyEditMode}
+                    onClick={handleToggleEmergencyEdit}
+                    disabled={!emergencyEditMode && emergencyContacts.length === 0}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Pencil className="h-4 w-4" />
                   </button>
                 </div>
               </>
@@ -461,7 +479,32 @@ function StudentDetails({ student }) {
           {/* EMERGENCY CONTACT: Emergency Numbers saved */}
           {showEmergency && (
             <>
-              {emergencyContacts.length === 0 && !savingEmergency ? (
+              {emergencyEditMode ? (
+                emergencyDraft.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      color: '#9ca3af',
+                      fontSize: 14,
+                      padding: '1.5rem 0.5rem'
+                    }}
+                  >
+                    All contacts removed.
+                    <br />
+                    Tap the pencil again to save.
+                  </div>
+                ) : (
+                  emergencyDraft.map((contact) => (
+                    <EmergencyContactCard
+                      key={contact.id}
+                      contact={contact}
+                      editable
+                      onChange={handleEditEmergencyContact}
+                      onRemove={handleRemoveEmergencyContact}
+                    />
+                  ))
+                )
+              ) : emergencyContacts.length === 0 && !savingEmergency ? (
                 <div
                   style={{
                     textAlign: 'center',
@@ -480,7 +523,6 @@ function StudentDetails({ student }) {
                     <EmergencyContactCard
                       key={contact.id}
                       contact={contact}
-                      onRemove={emergencyDeleteMode ? handleRemoveEmergencyContact : undefined}
                     />
                   ))}
                   {savingEmergency && <EmergencyContactSkeleton />}

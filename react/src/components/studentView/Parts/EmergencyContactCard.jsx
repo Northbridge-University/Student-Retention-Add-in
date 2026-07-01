@@ -42,12 +42,109 @@ export const EmergencyContactSkeleton = () => (
   </>
 );
 
+const editInputStyle = {
+  width: '100%',
+  padding: '6px 8px',
+  fontSize: 13,
+  color: '#1f2937',
+  background: '#fff',
+  border: '1px solid #fecaca',
+  borderRadius: 6,
+  outline: 'none',
+  boxSizing: 'border-box'
+};
+const editLabelStyle = {
+  display: 'block',
+  fontSize: 11,
+  fontWeight: 600,
+  color: '#b91c1c',
+  marginBottom: 3
+};
+
 // Card that displays a single saved emergency contact.
-// When `onRemove` is provided, a small delete button is shown.
-const EmergencyContactCard = ({ contact, onRemove }) => {
+// When `editable` is true, the fields become inputs (with an X to remove) and
+// `onChange` is called with the updated contact. `onRemove` shows a delete button.
+const EmergencyContactCard = ({ contact, editable, onChange, onRemove }) => {
   if (!contact) return null;
 
   const { name, number, relationship } = contact;
+
+  const update = (field, value) => {
+    if (onChange) onChange({ ...contact, [field]: value });
+  };
+
+  if (editable) {
+    return (
+      <div
+        className="ec-fade-in"
+        style={{
+          position: 'relative',
+          border: '1px solid #fca5a5',
+          background: '#fff',
+          borderRadius: '0.75rem',
+          padding: '0.75rem 0.875rem'
+        }}
+      >
+        <style>{cardStyles}</style>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={() => onRemove(contact)}
+            aria-label={`Remove ${name || 'emergency contact'}`}
+            title="Remove"
+            style={{
+              position: 'absolute',
+              top: 6,
+              right: 6,
+              width: 22,
+              height: 22,
+              borderRadius: '9999px',
+              border: 'none',
+              background: '#fee2e2',
+              color: '#b91c1c',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+          >
+            <X size={14} />
+          </button>
+        )}
+
+        <div style={{ marginBottom: 8, paddingRight: 22 }}>
+          <label style={editLabelStyle}>Name</label>
+          <input
+            type="text"
+            value={name || ''}
+            onChange={(e) => update('name', e.target.value)}
+            placeholder="Full name"
+            style={editInputStyle}
+          />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={editLabelStyle}>Number</label>
+          <input
+            type="tel"
+            value={number || ''}
+            onChange={(e) => update('number', formatPhoneNumber(e.target.value))}
+            placeholder="Phone number"
+            style={editInputStyle}
+          />
+        </div>
+        <div>
+          <label style={editLabelStyle}>Relationship</label>
+          <input
+            type="text"
+            value={relationship || ''}
+            onChange={(e) => update('relationship', e.target.value)}
+            placeholder="e.g. Parent, Spouse, Sibling"
+            style={editInputStyle}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
