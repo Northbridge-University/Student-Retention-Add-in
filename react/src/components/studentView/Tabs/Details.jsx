@@ -316,10 +316,10 @@ function StudentDetails({ student }) {
             <div className="relative">
               <button
                 id="emergency-contact-button"
-                className={`w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors ${
+                className={`text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors ${
                   showEmergency
-                    ? 'bg-red-300 text-red-800 hover:bg-red-400'
-                    : 'bg-red-200 text-red-700 hover:bg-red-300'
+                    ? 'bg-red-500 hover:bg-red-600'
+                    : 'bg-gray-500 hover:bg-red-500'
                 }`}
                 aria-label="Emergency Contact"
                 title="Emergency Contact"
@@ -335,7 +335,7 @@ function StudentDetails({ student }) {
                 <div className="relative">
                   <button
                     id="add-emergency-button"
-                    className="bg-green-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-green-600 transition-colors"
+                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-green-500 transition-colors"
                     aria-label="Add Emergency Number"
                     title="Add Emergency Number"
                     type="button"
@@ -347,7 +347,7 @@ function StudentDetails({ student }) {
                 <div className="relative">
                   <button
                     id="remove-emergency-button"
-                    className="bg-red-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-red-600 transition-colors"
+                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-red-500 transition-colors"
                     aria-label="Remove Emergency Number"
                     title="Remove Emergency Number"
                     type="button"
