@@ -19,6 +19,7 @@ import {
 import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatExcelDate } from '../../utility/Conversion';
+import AddEmergencyContactModal from '../Modal/AddEmergencyContactModal';
 
 // A small reusable component for displaying a single detail item.
 const DetailItem = ({ label, value }) => {
@@ -280,6 +281,9 @@ function StudentDetails({ student }) {
   // State for the Emergency Contact view toggle
   const [showEmergency, setShowEmergency] = useState(false);
 
+  // State for the "Add Emergency Contact" modal
+  const [showAddEmergencyModal, setShowAddEmergencyModal] = useState(false);
+
   const handlePrev = () => setPage((prev) => Math.max(0, prev - 1));
   const handleNext = () => setPage((prev) => Math.min(totalPages - 1, prev + 1));
 
@@ -287,7 +291,7 @@ function StudentDetails({ student }) {
 
   // Placeholder handlers for adding / removing emergency numbers (logic TBD)
   const handleAddEmergency = () => {
-    // TODO: wire up add-emergency-number logic
+    setShowAddEmergencyModal(true);
   };
   const handleRemoveEmergency = () => {
     // TODO: wire up remove-emergency-number logic
@@ -543,6 +547,11 @@ function StudentDetails({ student }) {
 
         </div>
       </div>
+
+      <AddEmergencyContactModal
+        isOpen={showAddEmergencyModal}
+        onClose={() => setShowAddEmergencyModal(false)}
+      />
     </>
   );
 }
