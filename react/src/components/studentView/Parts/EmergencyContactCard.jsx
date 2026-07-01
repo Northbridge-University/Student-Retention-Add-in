@@ -1,5 +1,6 @@
 import React from 'react';
-import { User, Phone, Heart, X } from 'lucide-react';
+import { User, Phone, X } from 'lucide-react';
+import { formatPhoneNumber } from '../../utility/Conversion';
 
 // Card that displays a single saved emergency contact.
 // When `onRemove` is provided, a small delete button is shown.
@@ -55,7 +56,6 @@ const EmergencyContactCard = ({ contact, onRemove }) => {
               marginLeft: 'auto',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 4,
               fontSize: 11,
               fontWeight: 600,
               color: '#b91c1c',
@@ -64,7 +64,6 @@ const EmergencyContactCard = ({ contact, onRemove }) => {
               padding: '2px 8px'
             }}
           >
-            <Heart size={11} />
             {relationship}
           </span>
         )}
@@ -77,7 +76,7 @@ const EmergencyContactCard = ({ contact, onRemove }) => {
             href={`tel:${number}`}
             style={{ color: '#374151', fontSize: 14, textDecoration: 'none' }}
           >
-            {number}
+            {formatPhoneNumber(number)}
           </a>
         </div>
       )}

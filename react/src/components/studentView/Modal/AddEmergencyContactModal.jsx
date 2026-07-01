@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Phone } from 'lucide-react';
 import Modal from '../../utility/Modal';
+import { formatPhoneNumber } from '../../utility/Conversion';
 
 // Modal for adding an emergency contact.
 // Collects a name, phone number, and relationship.
@@ -105,7 +106,7 @@ const AddEmergencyContactModal = ({ isOpen, onClose, onAdd }) => {
               id="emergency-number"
               type="tel"
               value={number}
-              onChange={(e) => setNumber(e.target.value)}
+              onChange={(e) => setNumber(formatPhoneNumber(e.target.value))}
               placeholder="Phone number"
               style={inputStyle}
             />

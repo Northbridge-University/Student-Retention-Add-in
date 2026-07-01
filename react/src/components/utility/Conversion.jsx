@@ -115,6 +115,25 @@ export function formatTimestamp(date = new Date()) {
   }
 }
 
+// Formats a phone number string into (XXX)-XXX-XXXX where possible.
+// - 10 digits            -> (786)-234-8749
+// - 11 digits (US, "1")  -> 1 (786)-234-8749
+// Anything else is returned unchanged so partial/invalid input isn't mangled.
+export function formatPhoneNumber(value) {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  const digits = str.replace(/\D/g, '');
+
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)})-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits[0] === '1') {
+    const d = digits.slice(1);
+    return `1 (${d.slice(0, 3)})-${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return str;
+}
+
 // Usage example:
 // const date = formatExcelDate(44561); // Converts Excel date serial to JavaScript Date
 // console.log(date); // Outputs: "10/07/25 12:00 AM" (depending on the input serial)
