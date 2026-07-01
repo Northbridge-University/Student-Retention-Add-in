@@ -1,16 +1,9 @@
 // Timestamp: 2025-12-11 11:20 AM | Version: 1.2.2
 import React from 'react';
+import { User } from 'lucide-react';
 import { formatName } from '../../utility/Conversion';
 import BounceAnimation from '../../utility/BounceAnimation';
 import DaysOutModal from '../Modal/DaysOutModal';
-
-// Helper function to get initials from a name string
-const getInitials = (name) => {
-  if (!name || typeof name !== 'string') return '--';
-  const parts = name.split(' ');
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
-};
 
 function StudentHeader({ student, selectedRowCount = 1 }) {
   // Use a fallback student object to prevent errors if the prop is null or undefined
@@ -22,8 +15,7 @@ function StudentHeader({ student, selectedRowCount = 1 }) {
   // Use formatName only if name is "Last, First"
   const studentNameRaw = safeStudent.StudentName || 'Select a Student';
   const studentName = studentNameRaw.includes(',') ? formatName(studentNameRaw) : studentNameRaw;
-  const initials = getInitials(studentName);
-  
+
   // Get assigned value; if missing, it remains undefined/null (so we can hide the pill)
   const assignedTo = safeStudent.Assigned;
 
@@ -258,7 +250,7 @@ function StudentHeader({ student, selectedRowCount = 1 }) {
             // Only show a generic title on the avatar if there is no expected start date.
             title={isNew && !expectedStartDisplay ? "New student" : undefined}
           >
-            {/* Render profile image if available and hasn't errored; otherwise show initials */}
+            {/* Render profile image if available and hasn't errored; otherwise show a generic avatar icon */}
             {profilePicUrl && !imageError ? (
               <img
                 src={profilePicUrl}
@@ -269,7 +261,7 @@ function StudentHeader({ student, selectedRowCount = 1 }) {
                 style={{ display: 'block' }}
               />
             ) : (
-              initials
+              <User className="w-7 h-7" strokeWidth={2} aria-hidden="true" />
             )}
 
             {isNew && (
