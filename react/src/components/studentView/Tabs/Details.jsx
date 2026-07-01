@@ -12,7 +12,9 @@ import {
   UserCheck,
   Lock,
   Activity,
-  Phone
+  Phone,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -283,6 +285,14 @@ function StudentDetails({ student }) {
 
   const toggleEmergency = () => setShowEmergency((prev) => !prev);
 
+  // Placeholder handlers for adding / removing emergency numbers (logic TBD)
+  const handleAddEmergency = () => {
+    // TODO: wire up add-emergency-number logic
+  };
+  const handleRemoveEmergency = () => {
+    // TODO: wire up remove-emergency-number logic
+  };
+
   // Helper to determine header text
   const getHeaderText = () => {
     if (showEmergency) return 'Emergency Contact';
@@ -320,6 +330,34 @@ function StudentDetails({ student }) {
                 <Phone className="h-4 w-4" />
               </button>
             </div>
+            {showEmergency && (
+              <>
+                <div className="relative">
+                  <button
+                    id="add-emergency-button"
+                    className="bg-green-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-green-600 transition-colors"
+                    aria-label="Add Emergency Number"
+                    title="Add Emergency Number"
+                    type="button"
+                    onClick={handleAddEmergency}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    id="remove-emergency-button"
+                    className="bg-red-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-red-600 transition-colors"
+                    aria-label="Remove Emergency Number"
+                    title="Remove Emergency Number"
+                    type="button"
+                    onClick={handleRemoveEmergency}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </>
+            )}
             {!showEmergency && (
               <>
                 <div className="relative">
