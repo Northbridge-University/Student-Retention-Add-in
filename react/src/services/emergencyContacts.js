@@ -118,6 +118,47 @@ export async function addEmergencyContact(studentId, contact) {
 }
 
 /**
+ * Replaces the full list of emergency contacts for a student and persists it.
+ * Used to save a batch of edits (and removals) made in the edit view.
+ * @param {string|number} studentId - The student's SyStudentId.
+ * @param {Array<{id?: string, name: string, number: string, relationship?: string}>} contacts
+ * @returns {Promise<Array|null>} The saved contacts array, or null on failure.
+ */
+export async function saveEmergencyContacts(studentId, contacts) {
+    const key = toKey(studentId);
+    if (!key) return null;
+
+    const settings = readWorkbookSettings();
+    if (!settings) return null;
+
+    const map = (settings[CONTACTS_KEY] && typeof settings[CONTACTS_KEY] === 'object')
+        ? settings[CONTACTS_KEY]
+        : {};
+
+    // Normalize/sanitize the incoming list, dropping entries missing name or number.
+    const nextList = (Array.isArray(contacts) ? contacts : [])
+        .map(c => ({
+            id: (c && typeof c.id === 'string' && c.id) ? c.id : makeId(),
+            name: (c && typeof c.name === 'string') ? c.name.trim() : '',
+            number: (c && typeof c.number === 'string') ? c.number.trim() : '',
+            relationship: (c && typeof c.relationship === 'string') ? c.relationship.trim() : '',
+            dateAdded: (c && typeof c.dateAdded === 'string') ? c.dateAdded : new Date().toISOString()
+        }))
+        .filter(c => c.name && c.number);
+
+    const nextMap = { ...map };
+    if (nextList.length === 0) {
+        delete nextMap[key];
+    } else {
+        nextMap[key] = nextList;
+    }
+    const next = { ...settings, [CONTACTS_KEY]: nextMap };
+
+    const ok = await writeWorkbookSettings(next);
+    return ok ? nextList : null;
+}
+
+/**
  * Removes an emergency contact (by id) for a student and persists the change.
  * @param {string|number} studentId - The student's SyStudentId.
  * @param {string} contactId - The id of the contact to remove.
