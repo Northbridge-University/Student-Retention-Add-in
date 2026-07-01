@@ -20,7 +20,7 @@ import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatExcelDate } from '../../utility/Conversion';
 import AddEmergencyContactModal from '../Modal/AddEmergencyContactModal';
-import EmergencyContactCard from '../Parts/EmergencyContactCard';
+import EmergencyContactCard, { EmergencyContactSkeleton } from '../Parts/EmergencyContactCard';
 import {
   getEmergencyContacts,
   addEmergencyContact,
@@ -293,6 +293,8 @@ function StudentDetails({ student }) {
   // Saved emergency contacts for this student, plus a delete/manage toggle.
   const [emergencyContacts, setEmergencyContacts] = useState([]);
   const [emergencyDeleteMode, setEmergencyDeleteMode] = useState(false);
+  // True while a newly added contact is being persisted (shows a loading card).
+  const [savingEmergency, setSavingEmergency] = useState(false);
 
   // The SyStudentId (canonical ID) is the identifier we key contacts by.
   const studentId = student && (student.ID ?? student.StudentNumber);
@@ -318,8 +320,13 @@ function StudentDetails({ student }) {
   };
 
   const handleAddEmergencyContact = async (contact) => {
-    const updated = await addEmergencyContact(studentId, contact);
-    if (updated) setEmergencyContacts(updated);
+    setSavingEmergency(true);
+    try {
+      const updated = await addEmergencyContact(studentId, contact);
+      if (updated) setEmergencyContacts(updated);
+    } finally {
+      setSavingEmergency(false);
+    }
   };
 
   const handleRemoveEmergencyContact = async (contact) => {
@@ -454,7 +461,7 @@ function StudentDetails({ student }) {
           {/* EMERGENCY CONTACT: Emergency Numbers saved */}
           {showEmergency && (
             <>
-              {emergencyContacts.length === 0 ? (
+              {emergencyContacts.length === 0 && !savingEmergency ? (
                 <div
                   style={{
                     textAlign: 'center',
@@ -468,13 +475,16 @@ function StudentDetails({ student }) {
                   Tap the <strong>+</strong> button to add one.
                 </div>
               ) : (
-                emergencyContacts.map((contact) => (
-                  <EmergencyContactCard
-                    key={contact.id}
-                    contact={contact}
-                    onRemove={emergencyDeleteMode ? handleRemoveEmergencyContact : undefined}
-                  />
-                ))
+                <>
+                  {emergencyContacts.map((contact) => (
+                    <EmergencyContactCard
+                      key={contact.id}
+                      contact={contact}
+                      onRemove={emergencyDeleteMode ? handleRemoveEmergencyContact : undefined}
+                    />
+                  ))}
+                  {savingEmergency && <EmergencyContactSkeleton />}
+                </>
               )}
             </>
           )}
