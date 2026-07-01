@@ -11,7 +11,8 @@ import {
   LogIn,
   UserCheck,
   Lock,
-  Activity
+  Activity,
+  Phone
 } from 'lucide-react';
 import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -274,11 +275,17 @@ function StudentDetails({ student }) {
   const [page, setPage] = useState(0);
   const totalPages = 3;
 
+  // State for the Emergency Contact view toggle
+  const [showEmergency, setShowEmergency] = useState(false);
+
   const handlePrev = () => setPage((prev) => Math.max(0, prev - 1));
   const handleNext = () => setPage((prev) => Math.min(totalPages - 1, prev + 1));
 
+  const toggleEmergency = () => setShowEmergency((prev) => !prev);
+
   // Helper to determine header text
   const getHeaderText = () => {
+    if (showEmergency) return 'Emergency Contact';
     if (page === 0) return 'Details';
     return `Details - ${page + 1}`;
   };
@@ -298,34 +305,55 @@ function StudentDetails({ student }) {
           <div className="flex items-center gap-2">
             <div className="relative">
               <button
-                id="nav-left-details-button"
-                className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
-                  page === 0 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
+                id="emergency-contact-button"
+                className={`w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors ${
+                  showEmergency
+                    ? 'bg-red-300 text-red-800 hover:bg-red-400'
+                    : 'bg-red-200 text-red-700 hover:bg-red-300'
                 }`}
-                aria-label="Previous"
-                title="Previous"
+                aria-label="Emergency Contact"
+                title="Emergency Contact"
                 type="button"
-                onClick={handlePrev}
-                disabled={page === 0}
+                aria-pressed={showEmergency}
+                onClick={toggleEmergency}
               >
-                <ChevronLeft className="h-4 w-4" />
+                <Phone className="h-4 w-4" />
               </button>
             </div>
-            <div className="relative">
-              <button
-                id="nav-right-details-button"
-                className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
-                  page === totalPages - 1 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
-                }`}
-                aria-label="Next"
-                title="Next"
-                type="button"
-                onClick={handleNext}
-                disabled={page === totalPages - 1}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+            {!showEmergency && (
+              <>
+                <div className="relative">
+                  <button
+                    id="nav-left-details-button"
+                    className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
+                      page === 0 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
+                    }`}
+                    aria-label="Previous"
+                    title="Previous"
+                    type="button"
+                    onClick={handlePrev}
+                    disabled={page === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    id="nav-right-details-button"
+                    className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
+                      page === totalPages - 1 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
+                    }`}
+                    aria-label="Next"
+                    title="Next"
+                    type="button"
+                    onClick={handleNext}
+                    disabled={page === totalPages - 1}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -340,9 +368,27 @@ function StudentDetails({ student }) {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          
+
+          {/* EMERGENCY CONTACT: Emergency Numbers saved */}
+          {showEmergency && (
+            <>
+              <CopyField
+                label="Emergency Contact"
+                value={student.EmergencyContact}
+                id="copy-emergency-contact"
+                Icon={User}
+              />
+              <CopyField
+                label="Emergency Phone"
+                value={filterPhone(student.EmergencyPhone)}
+                id="copy-emergency-phone"
+                Icon={Phone}
+              />
+            </>
+          )}
+
           {/* PAGE 1: Contact Information */}
-          {page === 0 && (
+          {!showEmergency && page === 0 && (
             <>
               <CopyField
                 label="Student Number"
@@ -384,7 +430,7 @@ function StudentDetails({ student }) {
           )}
 
           {/* PAGE 2: Academic Information */}
-          {page === 1 && (
+          {!showEmergency && page === 1 && (
             <>
               <CopyField
                 label="System Student ID"
@@ -428,7 +474,7 @@ function StudentDetails({ student }) {
           )}
 
           {/* PAGE 3: Status Information */}
-          {page === 2 && (
+          {!showEmergency && page === 2 && (
             <>
               <CopyField
                 label="Last Login"
