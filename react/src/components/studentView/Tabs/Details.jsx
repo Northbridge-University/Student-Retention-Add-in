@@ -318,8 +318,8 @@ function StudentDetails({ student }) {
                 id="emergency-contact-button"
                 className={`text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors ${
                   showEmergency
-                    ? 'bg-red-500 hover:bg-red-600'
-                    : 'bg-gray-500 hover:bg-red-500'
+                    ? 'bg-red-400 hover:bg-red-500'
+                    : 'bg-gray-500 hover:bg-red-400'
                 }`}
                 aria-label="Emergency Contact"
                 title="Emergency Contact"
@@ -347,7 +347,7 @@ function StudentDetails({ student }) {
                 <div className="relative">
                   <button
                     id="remove-emergency-button"
-                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-red-500 transition-colors"
+                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-red-400 transition-colors"
                     aria-label="Remove Emergency Number"
                     title="Remove Emergency Number"
                     type="button"
