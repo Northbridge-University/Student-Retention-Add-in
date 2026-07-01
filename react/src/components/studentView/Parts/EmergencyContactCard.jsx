@@ -2,6 +2,46 @@ import React from 'react';
 import { User, Phone, X } from 'lucide-react';
 import { formatPhoneNumber } from '../../utility/Conversion';
 
+const cardStyles = `
+@keyframes ecFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ecPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+.ec-fade-in { animation: ecFadeIn 0.35s ease-out; }
+.ec-skeleton-line { animation: ecPulse 1.2s ease-in-out infinite; background: #fecaca; border-radius: 6px; }
+`;
+
+// Skeleton placeholder shown while a new emergency contact is being saved.
+export const EmergencyContactSkeleton = () => (
+  <>
+    <style>{cardStyles}</style>
+    <div
+      aria-hidden="true"
+      style={{
+        position: 'relative',
+        border: '1px solid #fecaca',
+        background: '#fef2f2',
+        borderRadius: '0.75rem',
+        padding: '0.75rem 0.875rem'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div className="ec-skeleton-line" style={{ width: 16, height: 16, borderRadius: '9999px' }} />
+        <div className="ec-skeleton-line" style={{ width: '45%', height: 12 }} />
+        <div className="ec-skeleton-line" style={{ width: 56, height: 14, marginLeft: 'auto', borderRadius: '9999px' }} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="ec-skeleton-line" style={{ width: 16, height: 16, borderRadius: '9999px' }} />
+        <div className="ec-skeleton-line" style={{ width: '55%', height: 12 }} />
+      </div>
+    </div>
+  </>
+);
+
 // Card that displays a single saved emergency contact.
 // When `onRemove` is provided, a small delete button is shown.
 const EmergencyContactCard = ({ contact, onRemove }) => {
@@ -11,6 +51,7 @@ const EmergencyContactCard = ({ contact, onRemove }) => {
 
   return (
     <div
+      className="ec-fade-in"
       style={{
         position: 'relative',
         border: '1px solid #fecaca',
@@ -19,6 +60,7 @@ const EmergencyContactCard = ({ contact, onRemove }) => {
         padding: '0.75rem 0.875rem'
       }}
     >
+      <style>{cardStyles}</style>
       {onRemove && (
         <button
           type="button"
