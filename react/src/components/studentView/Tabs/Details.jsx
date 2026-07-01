@@ -1,5 +1,5 @@
 // 2025-12-11 11:28 EST - Version 3.8.0 - Updated Program bolding: 'in'/'with' remain normal, text AFTER them is bolded
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   IdCardLanyard,
   Mail,
@@ -20,6 +20,12 @@ import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatExcelDate } from '../../utility/Conversion';
 import AddEmergencyContactModal from '../Modal/AddEmergencyContactModal';
+import EmergencyContactCard from '../Parts/EmergencyContactCard';
+import {
+  getEmergencyContacts,
+  addEmergencyContact,
+  removeEmergencyContact
+} from '../../../services/emergencyContacts';
 
 // A small reusable component for displaying a single detail item.
 const DetailItem = ({ label, value }) => {
@@ -284,17 +290,45 @@ function StudentDetails({ student }) {
   // State for the "Add Emergency Contact" modal
   const [showAddEmergencyModal, setShowAddEmergencyModal] = useState(false);
 
+  // Saved emergency contacts for this student, plus a delete/manage toggle.
+  const [emergencyContacts, setEmergencyContacts] = useState([]);
+  const [emergencyDeleteMode, setEmergencyDeleteMode] = useState(false);
+
+  // The SyStudentId (canonical ID) is the identifier we key contacts by.
+  const studentId = student && (student.ID ?? student.StudentNumber);
+
+  // Load saved emergency contacts whenever the viewed student changes.
+  useEffect(() => {
+    setEmergencyDeleteMode(false);
+    setEmergencyContacts(getEmergencyContacts(studentId));
+  }, [studentId]);
+
   const handlePrev = () => setPage((prev) => Math.max(0, prev - 1));
   const handleNext = () => setPage((prev) => Math.min(totalPages - 1, prev + 1));
 
   const toggleEmergency = () => setShowEmergency((prev) => !prev);
 
-  // Placeholder handlers for adding / removing emergency numbers (logic TBD)
   const handleAddEmergency = () => {
     setShowAddEmergencyModal(true);
   };
+
+  // The header trash button toggles a delete mode that reveals per-card removal.
   const handleRemoveEmergency = () => {
-    // TODO: wire up remove-emergency-number logic
+    setEmergencyDeleteMode((prev) => !prev);
+  };
+
+  const handleAddEmergencyContact = async (contact) => {
+    const updated = await addEmergencyContact(studentId, contact);
+    if (updated) setEmergencyContacts(updated);
+  };
+
+  const handleRemoveEmergencyContact = async (contact) => {
+    if (!contact || !contact.id) return;
+    const updated = await removeEmergencyContact(studentId, contact.id);
+    if (updated) {
+      setEmergencyContacts(updated);
+      if (updated.length === 0) setEmergencyDeleteMode(false);
+    }
   };
 
   // Helper to determine header text
@@ -351,11 +385,17 @@ function StudentDetails({ student }) {
                 <div className="relative">
                   <button
                     id="remove-emergency-button"
-                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-red-400 transition-colors"
+                    className={`text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      emergencyDeleteMode
+                        ? 'bg-red-400 hover:bg-red-500'
+                        : 'bg-gray-500 hover:bg-red-400'
+                    }`}
                     aria-label="Remove Emergency Number"
-                    title="Remove Emergency Number"
+                    title={emergencyDeleteMode ? 'Done removing' : 'Remove Emergency Number'}
                     type="button"
+                    aria-pressed={emergencyDeleteMode}
                     onClick={handleRemoveEmergency}
+                    disabled={emergencyContacts.length === 0}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -414,18 +454,28 @@ function StudentDetails({ student }) {
           {/* EMERGENCY CONTACT: Emergency Numbers saved */}
           {showEmergency && (
             <>
-              <CopyField
-                label="Emergency Contact"
-                value={student.EmergencyContact}
-                id="copy-emergency-contact"
-                Icon={User}
-              />
-              <CopyField
-                label="Emergency Phone"
-                value={filterPhone(student.EmergencyPhone)}
-                id="copy-emergency-phone"
-                Icon={Phone}
-              />
+              {emergencyContacts.length === 0 ? (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    color: '#9ca3af',
+                    fontSize: 14,
+                    padding: '1.5rem 0.5rem'
+                  }}
+                >
+                  No emergency contacts saved.
+                  <br />
+                  Tap the <strong>+</strong> button to add one.
+                </div>
+              ) : (
+                emergencyContacts.map((contact) => (
+                  <EmergencyContactCard
+                    key={contact.id}
+                    contact={contact}
+                    onRemove={emergencyDeleteMode ? handleRemoveEmergencyContact : undefined}
+                  />
+                ))
+              )}
             </>
           )}
 
@@ -551,6 +601,7 @@ function StudentDetails({ student }) {
       <AddEmergencyContactModal
         isOpen={showAddEmergencyModal}
         onClose={() => setShowAddEmergencyModal(false)}
+        onAdd={handleAddEmergencyContact}
       />
     </>
   );
