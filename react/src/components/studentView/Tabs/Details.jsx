@@ -24,7 +24,8 @@ import EmergencyContactCard, { EmergencyContactSkeleton } from '../Parts/Emergen
 import {
   getEmergencyContacts,
   addEmergencyContact,
-  saveEmergencyContacts
+  saveEmergencyContacts,
+  contactListsEqual
 } from '../../../services/emergencyContacts';
 
 // A small reusable component for displaying a single detail item.
@@ -297,14 +298,24 @@ function StudentDetails({ student }) {
   const [emergencyDraft, setEmergencyDraft] = useState([]);
   // True while a newly added contact is being persisted (shows a loading card).
   const [savingEmergency, setSavingEmergency] = useState(false);
+  // True while the edit draft is being persisted (guards double pencil clicks).
+  const [savingEmergencyEdit, setSavingEmergencyEdit] = useState(false);
+  // Set after a blocked save so invalid (empty) required fields get flagged.
+  const [showEmergencyValidation, setShowEmergencyValidation] = useState(false);
+  // Non-empty when the last save attempt failed — edits stay open so nothing is lost.
+  const [emergencyEditError, setEmergencyEditError] = useState('');
 
   // The SyStudentId (canonical ID) is the identifier we key contacts by.
   const studentId = student && (student.ID ?? student.StudentNumber);
 
   // Load saved emergency contacts whenever the viewed student changes.
+  // Any in-progress draft is discarded on purpose — carrying edits across
+  // students would risk writing one student's contacts onto another.
   useEffect(() => {
     setEmergencyEditMode(false);
     setEmergencyDraft([]);
+    setShowEmergencyValidation(false);
+    setEmergencyEditError('');
     setEmergencyContacts(getEmergencyContacts(studentId));
   }, [studentId]);
 
@@ -317,19 +328,52 @@ function StudentDetails({ student }) {
     setShowAddEmergencyModal(true);
   };
 
+  const closeEmergencyEdit = () => {
+    setEmergencyEditMode(false);
+    setEmergencyDraft([]);
+    setShowEmergencyValidation(false);
+    setEmergencyEditError('');
+  };
+
   // The header pencil button toggles edit mode. Entering edit takes a working
   // copy of the contacts; clicking again saves the draft and closes the state.
   const handleToggleEmergencyEdit = async () => {
+    if (savingEmergencyEdit) return; // save already in flight
     if (!emergencyEditMode) {
       setEmergencyDraft(emergencyContacts.map((c) => ({ ...c })));
       setEmergencyEditMode(true);
       return;
     }
-    // Exiting edit mode — persist the draft.
-    const saved = await saveEmergencyContacts(studentId, emergencyDraft);
-    if (saved) setEmergencyContacts(saved);
-    setEmergencyEditMode(false);
-    setEmergencyDraft([]);
+
+    // Block the save if any remaining contact lost its name or number —
+    // saveEmergencyContacts would silently drop those entries.
+    const hasInvalid = emergencyDraft.some(
+      (c) => !(c.name || '').trim() || !(c.number || '').trim()
+    );
+    if (hasInvalid) {
+      setShowEmergencyValidation(true);
+      return;
+    }
+
+    // Nothing changed — just close, no saveAsync round-trip.
+    if (contactListsEqual(emergencyDraft, emergencyContacts)) {
+      closeEmergencyEdit();
+      return;
+    }
+
+    setSavingEmergencyEdit(true);
+    try {
+      const saved = await saveEmergencyContacts(studentId, emergencyDraft);
+      if (saved) {
+        setEmergencyContacts(saved);
+        closeEmergencyEdit();
+      } else {
+        // Keep edit mode (and the draft) open so the edits aren't lost.
+        setEmergencyEditError("Couldn't save changes — try again.");
+      }
+    } finally {
+      setSavingEmergencyEdit(false);
+    }
   };
 
   // Update a single field of a contact within the edit draft.
@@ -420,7 +464,11 @@ function StudentDetails({ student }) {
                     type="button"
                     aria-pressed={emergencyEditMode}
                     onClick={handleToggleEmergencyEdit}
-                    disabled={!emergencyEditMode && emergencyContacts.length === 0}
+                    disabled={
+                      savingEmergencyEdit ||
+                      savingEmergency || // don't snapshot a stale list while an add is persisting
+                      (!emergencyEditMode && emergencyContacts.length === 0)
+                    }
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
@@ -480,30 +528,49 @@ function StudentDetails({ student }) {
           {showEmergency && (
             <>
               {emergencyEditMode ? (
-                emergencyDraft.length === 0 ? (
-                  <div
-                    style={{
-                      textAlign: 'center',
-                      color: '#9ca3af',
-                      fontSize: 14,
-                      padding: '1.5rem 0.5rem'
-                    }}
-                  >
-                    All contacts removed.
-                    <br />
-                    Tap the pencil again to save.
-                  </div>
-                ) : (
-                  emergencyDraft.map((contact) => (
-                    <EmergencyContactCard
-                      key={contact.id}
-                      contact={contact}
-                      editable
-                      onChange={handleEditEmergencyContact}
-                      onRemove={handleRemoveEmergencyContact}
-                    />
-                  ))
-                )
+                <>
+                  {emergencyEditError && (
+                    <div
+                      role="alert"
+                      style={{
+                        textAlign: 'center',
+                        color: '#b91c1c',
+                        background: '#fee2e2',
+                        borderRadius: '0.5rem',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        padding: '0.5rem'
+                      }}
+                    >
+                      {emergencyEditError}
+                    </div>
+                  )}
+                  {emergencyDraft.length === 0 ? (
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        color: '#9ca3af',
+                        fontSize: 14,
+                        padding: '1.5rem 0.5rem'
+                      }}
+                    >
+                      All contacts removed.
+                      <br />
+                      Tap the pencil again to save.
+                    </div>
+                  ) : (
+                    emergencyDraft.map((contact) => (
+                      <EmergencyContactCard
+                        key={contact.id}
+                        contact={contact}
+                        editable
+                        onChange={handleEditEmergencyContact}
+                        onRemove={handleRemoveEmergencyContact}
+                        highlightInvalid={showEmergencyValidation}
+                      />
+                    ))
+                  )}
+                </>
               ) : emergencyContacts.length === 0 && !savingEmergency ? (
                 <div
                   style={{

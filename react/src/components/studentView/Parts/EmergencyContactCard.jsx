@@ -64,7 +64,8 @@ const editLabelStyle = {
 // Card that displays a single saved emergency contact.
 // When `editable` is true, the fields become inputs (with an X to remove) and
 // `onChange` is called with the updated contact. `onRemove` shows a delete button.
-const EmergencyContactCard = ({ contact, editable, onChange, onRemove }) => {
+// `highlightInvalid` marks empty required fields (name/number) after a blocked save.
+const EmergencyContactCard = ({ contact, editable, onChange, onRemove, highlightInvalid }) => {
   if (!contact) return null;
 
   const { name, number, relationship } = contact;
@@ -72,6 +73,10 @@ const EmergencyContactCard = ({ contact, editable, onChange, onRemove }) => {
   const update = (field, value) => {
     if (onChange) onChange({ ...contact, [field]: value });
   };
+
+  const nameMissing = !(name || '').trim();
+  const numberMissing = !(number || '').trim();
+  const invalidStyle = { borderColor: '#ef4444', background: '#fef2f2' };
 
   if (editable) {
     return (
@@ -119,7 +124,7 @@ const EmergencyContactCard = ({ contact, editable, onChange, onRemove }) => {
             value={name || ''}
             onChange={(e) => update('name', e.target.value)}
             placeholder="Full name"
-            style={editInputStyle}
+            style={{ ...editInputStyle, ...(highlightInvalid && nameMissing ? invalidStyle : {}) }}
           />
         </div>
         <div style={{ marginBottom: 8 }}>
@@ -129,7 +134,7 @@ const EmergencyContactCard = ({ contact, editable, onChange, onRemove }) => {
             value={number || ''}
             onChange={(e) => update('number', formatPhoneNumber(e.target.value))}
             placeholder="Phone number"
-            style={editInputStyle}
+            style={{ ...editInputStyle, ...(highlightInvalid && numberMissing ? invalidStyle : {}) }}
           />
         </div>
         <div>
@@ -142,6 +147,11 @@ const EmergencyContactCard = ({ contact, editable, onChange, onRemove }) => {
             style={editInputStyle}
           />
         </div>
+        {highlightInvalid && (nameMissing || numberMissing) && (
+          <p style={{ margin: '8px 0 0', fontSize: 11, fontWeight: 600, color: '#ef4444' }}>
+            Name and number are required — fill them in or remove this contact.
+          </p>
+        )}
       </div>
     );
   }
