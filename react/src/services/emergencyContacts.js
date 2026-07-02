@@ -68,6 +68,21 @@ function makeId() {
     return `ec_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
+// True when two contact lists hold the same entries in the same order.
+// Compares the user-visible fields (id, name, number, relationship).
+export function contactListsEqual(a, b) {
+    const listA = Array.isArray(a) ? a : [];
+    const listB = Array.isArray(b) ? b : [];
+    if (listA.length !== listB.length) return false;
+    return listA.every((c, i) => {
+        const o = listB[i] || {};
+        return (c?.id || '') === (o.id || '')
+            && ((c?.name || '').trim()) === ((o.name || '').trim())
+            && ((c?.number || '').trim()) === ((o.number || '').trim())
+            && ((c?.relationship || '').trim()) === ((o.relationship || '').trim());
+    });
+}
+
 /**
  * Returns the emergency contacts saved for a student (always an array).
  * @param {string|number} studentId - The student's SyStudentId (canonical ID).
@@ -145,6 +160,10 @@ export async function saveEmergencyContacts(studentId, contacts) {
             dateAdded: (c && typeof c.dateAdded === 'string') ? c.dateAdded : new Date().toISOString()
         }))
         .filter(c => c.name && c.number);
+
+    // Nothing actually changed — skip the saveAsync round-trip.
+    const existing = Array.isArray(map[key]) ? map[key] : [];
+    if (contactListsEqual(nextList, existing)) return existing;
 
     const nextMap = { ...map };
     if (nextList.length === 0) {
