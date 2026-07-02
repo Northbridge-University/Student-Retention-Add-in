@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatExcelDate } from '../../utility/Conversion';
+import { copyToClipboard } from '../../utility/clipboard';
+import chromeExtensionService from '../../../../../shared/chromeExtensionService.js';
 import AddEmergencyContactModal from '../Modal/AddEmergencyContactModal';
 import EmergencyContactCard, { EmergencyContactSkeleton } from '../Parts/EmergencyContactCard';
 import {
@@ -52,44 +54,6 @@ const DetailItem = ({ label, value }) => {
       <span style={valueStyles}>{value}</span>
     </div>
   );
-};
-
-// Utility for copy-to-clipboard with Fallback mechanism
-const copyToClipboard = async (text) => {
-  if (!text) return;
-
-  // 1. Try Modern Async API
-  if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch (err) {
-      console.warn('Clipboard API failed, attempting fallback...', err);
-    }
-  }
-
-  // 2. Fallback: document.execCommand('copy')
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    ta.style.top = '0';
-    ta.setAttribute('readonly', '');
-    
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    
-    const successful = document.execCommand('copy');
-    document.body.removeChild(ta);
-    
-    if (!successful) {
-        console.error('Fallback copy failed.');
-    }
-  } catch (err) {
-    console.error('All copy methods failed', err);
-  }
 };
 
 // Helper to format ISO strings (e.g. 2025-11-16 17:47:43+00:00)
@@ -386,6 +350,25 @@ function StudentDetails({ student }) {
     setEmergencyDraft((prev) => prev.filter((c) => c.id !== contact.id));
   };
 
+  // Send the contact's number to the Chrome extension call queue, mirroring
+  // the ribbon call button's direct-phone path (autoCall = true).
+  const handleCallEmergencyContact = (contact) => {
+    const number = (contact?.number || '').trim();
+    if (!number) return;
+    chromeExtensionService.sendSelectedStudents(
+      [{
+        name: student.StudentName || '',
+        syStudentId: student.ID || '',
+        phone: number,
+        otherPhone: '',
+        directPhone: number,
+        isOtherContact: true
+      }],
+      number,
+      true
+    );
+  };
+
   const handleAddEmergencyContact = async (contact) => {
     setSavingEmergency(true);
     try {
@@ -587,6 +570,7 @@ function StudentDetails({ student }) {
                     <EmergencyContactCard
                       key={contact.id}
                       contact={contact}
+                      onCall={handleCallEmergencyContact}
                     />
                   ))}
                   {savingEmergency && <EmergencyContactSkeleton />}

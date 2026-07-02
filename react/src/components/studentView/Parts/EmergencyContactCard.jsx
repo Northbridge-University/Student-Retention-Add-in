@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { User, Phone, X } from 'lucide-react';
 import { formatPhoneNumber } from '../../utility/Conversion';
+import { copyToClipboard } from '../../utility/clipboard';
 
 const cardStyles = `
 @keyframes ecFadeIn {
@@ -13,6 +14,9 @@ const cardStyles = `
 }
 .ec-fade-in { animation: ecFadeIn 0.35s ease-out; }
 .ec-skeleton-line { animation: ecPulse 1.2s ease-in-out infinite; background: #fecaca; border-radius: 6px; }
+.ec-copy:hover { background: #e5e7eb; }
+.ec-call-btn { background: transparent; color: #6b7280; }
+.ec-call-btn:hover { background: #dcfce7; color: #16a34a; }
 `;
 
 // Skeleton placeholder shown while a new emergency contact is being saved.
@@ -64,14 +68,23 @@ const editLabelStyle = {
 // Card that displays a single saved emergency contact.
 // When `editable` is true, the fields become inputs (with an X to remove) and
 // `onChange` is called with the updated contact. `onRemove` shows a delete button.
+// `onCall` turns the phone icon into a call button (Chrome extension call queue).
 // `highlightInvalid` marks empty required fields (name/number) after a blocked save.
-const EmergencyContactCard = ({ contact, editable, onChange, onRemove, highlightInvalid }) => {
+const EmergencyContactCard = ({ contact, editable, onChange, onRemove, onCall, highlightInvalid }) => {
+  const [copied, setCopied] = useState(false);
+
   if (!contact) return null;
 
   const { name, number, relationship } = contact;
 
   const update = (field, value) => {
     if (onChange) onChange({ ...contact, [field]: value });
+  };
+
+  const handleCopyNumber = async () => {
+    await copyToClipboard(number);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
   };
 
   const nameMissing = !(name || '').trim();
@@ -219,14 +232,60 @@ const EmergencyContactCard = ({ contact, editable, onChange, onRemove, highlight
       </div>
 
       {number && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Phone size={16} color="#6b7280" style={{ flexShrink: 0 }} />
-          <a
-            href={`tel:${number}`}
-            style={{ color: '#374151', fontSize: 14, textDecoration: 'none' }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {onCall ? (
+            <button
+              type="button"
+              className="ec-call-btn"
+              onClick={() => onCall(contact)}
+              aria-label={`Call ${name || 'emergency contact'}`}
+              title="Call"
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '9999px',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
+                transition: 'background 0.15s, color 0.15s'
+              }}
+            >
+              <Phone size={16} />
+            </button>
+          ) : (
+            <Phone size={16} color="#6b7280" style={{ flexShrink: 0, margin: 6 }} />
+          )}
+          <div
+            className="ec-copy"
+            onClick={handleCopyNumber}
+            title="Copy number"
+            style={{
+              position: 'relative',
+              flex: 1,
+              padding: '4px 8px',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              overflow: 'hidden',
+              transition: 'background 0.15s'
+            }}
           >
-            {formatPhoneNumber(number)}
-          </a>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'rgba(34,197,94,0.25)',
+                opacity: copied ? 1 : 0,
+                pointerEvents: 'none',
+                transition: 'opacity 0.7s ease'
+              }}
+            />
+            <span style={{ color: '#374151', fontSize: 14, fontWeight: 600 }}>
+              {formatPhoneNumber(number)}
+            </span>
+          </div>
         </div>
       )}
     </div>
