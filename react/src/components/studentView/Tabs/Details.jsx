@@ -16,7 +16,6 @@ import {
   Plus,
   Pencil
 } from 'lucide-react';
-import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatExcelDate } from '../../utility/Conversion';
 import AddEmergencyContactModal from '../Modal/AddEmergencyContactModal';
@@ -222,7 +221,7 @@ const style = `
 `;
 
 // Updated CopyField to accept 'displayValue' (React Node) separate from 'value' (Clipboard Text)
-function CopyField({ label, value, displayValue, id, Icon, iconSrc }) {
+function CopyField({ label, value, displayValue, id, Icon }) {
   const [copied, setCopied] = useState(false);
 
   // If there is no value, omit the component entirely from the view
@@ -263,9 +262,7 @@ function CopyField({ label, value, displayValue, id, Icon, iconSrc }) {
             transition: 'opacity 0.7s ease'
           }}
         />
-        {iconSrc ? (
-          <img src={iconSrc} alt="" style={{ width: 18, height: 18, flexShrink: 0 }} />
-        ) : Icon ? (
+        {Icon ? (
           <Icon size={18} color="#6b7280" style={{ flexShrink: 0 }} />
         ) : null}
         <div style={{ flex: 1 }}>
@@ -611,13 +608,13 @@ function StudentDetails({ student }) {
                 label="Primary Phone"
                 value={filterPhone(student.Phone)}
                 id="copy-primary-phone"
-                iconSrc={callIcon}
+                Icon={Phone}
               />
               <CopyField
                 label="Other Phone"
                 value={filterPhone(student.OtherPhone)}
                 id="copy-other-phone"
-                iconSrc={callIcon}
+                Icon={Phone}
               />
               <CopyField
                 label="Student Email"
