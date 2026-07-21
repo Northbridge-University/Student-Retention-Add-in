@@ -164,7 +164,7 @@ export const defaultWorkbookSettings = [
 		type: 'action',
 		defaultValue: null,
 		section: 'Risk Index',
-		description: 'Scan previous "LDA M-D-YYYY" sheets in this workbook and backfill the history from them. Dates that already have a snapshot are left untouched.'
+		description: 'Backfill the history by scanning previous "LDA M-D-YYYY" sheets in this workbook, or by uploading a CSV/Excel file. Dates that already have a snapshot are left untouched.'
 	},
 	{
 		id: 'downloadLdaHistory',

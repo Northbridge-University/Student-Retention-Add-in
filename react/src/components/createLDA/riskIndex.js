@@ -53,6 +53,11 @@ export function todayKey(date = new Date()) {
  */
 export function normalizeLdaValue(val) {
     if (val === null || val === undefined || val === '') return null;
+    if (val instanceof Date) {
+        // ExcelJS parses xlsx date cells as UTC-midnight Dates.
+        if (isNaN(val.getTime())) return null;
+        return `${val.getUTCFullYear()}-${pad2(val.getUTCMonth() + 1)}-${pad2(val.getUTCDate())}`;
+    }
     if (typeof val === 'number') {
         if (val < 20000 || val > 80000) return String(val);
         const d = new Date(Math.round((val - 25569) * 86400000));
@@ -198,6 +203,127 @@ export function mergeImportedDays(history, importedDays) {
     return { history: { version: 1, days }, added: added.sort(), skipped: skipped.sort() };
 }
 
+/**
+ * Minimal quote-aware CSV parser (handles quoted fields, escaped quotes, and
+ * newlines inside quotes). Returns an array of string rows.
+ */
+export function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+    const src = String(text ?? '');
+    for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (src[i + 1] === '"') { field += '"'; i++; }
+                else inQuotes = false;
+            } else {
+                field += ch;
+            }
+        } else if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === ',') {
+            row.push(field);
+            field = '';
+        } else if (ch === '\n' || ch === '\r') {
+            if (ch === '\r' && src[i + 1] === '\n') i++;
+            row.push(field);
+            field = '';
+            rows.push(row);
+            row = [];
+        } else {
+            field += ch;
+        }
+    }
+    if (field !== '' || row.length > 0) {
+        row.push(field);
+        rows.push(row);
+    }
+    // Drop fully-empty trailing rows (common with trailing newlines).
+    return rows.filter(r => r.some(c => String(c).trim() !== ''));
+}
+
+/**
+ * Unwrap an ExcelJS cell value (rich text, hyperlink, formula result, Date)
+ * into a plain value usable by rowsToImportedDays.
+ */
+export function excelCellToValue(v) {
+    if (v === null || v === undefined) return '';
+    if (v instanceof Date) return v;
+    if (typeof v === 'object') {
+        if (Array.isArray(v.richText)) return v.richText.map(t => t && t.text ? t.text : '').join('');
+        if (v.result !== undefined && v.result !== null) return excelCellToValue(v.result);
+        if (v.text !== undefined) return excelCellToValue(v.text);
+        if (v.hyperlink !== undefined) return String(v.hyperlink);
+        return '';
+    }
+    return v;
+}
+
+const DATE_COLUMN_ALIASES = ['date', 'snapshot date', 'day', 'timestamp'];
+
+/**
+ * Convert a header + data row matrix (from an uploaded CSV or Excel file) into
+ * per-day snapshots, matching the Download History layout: Date, SyStudentID,
+ * LDA, Days Out — columns resolved by alias, extra columns ignored. Rows
+ * without a parseable date, an id, or a numeric Days Out are counted as
+ * skipped. Throws when the required columns can't be found at all.
+ * @returns {{ days: Object, rows: number, skippedRows: number }}
+ */
+export function rowsToImportedDays(rows) {
+    if (!Array.isArray(rows) || rows.length < 2) {
+        throw new Error('File has no data rows.');
+    }
+    const headers = rows[0];
+    const normalized = headers.map(normalizeHeader);
+    const dateIdx = findColumnIndex(normalized, DATE_COLUMN_ALIASES);
+    const { idIdx, ldaIdx, daysOutIdx } = resolveSnapshotIndices(headers);
+    const missing = [];
+    if (dateIdx === -1) missing.push('Date');
+    if (idIdx === -1) missing.push('SyStudentID');
+    if (daysOutIdx === -1) missing.push('Days Out');
+    if (missing.length > 0) {
+        throw new Error(`Missing required column${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}. Expected the Download History layout (Date, SyStudentID, LDA, Days Out).`);
+    }
+
+    const days = {};
+    let imported = 0;
+    let skippedRows = 0;
+    for (let i = 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const dateKey = normalizeLdaValue(row[dateIdx]);
+        const rawId = row[idIdx];
+        const id = (rawId === null || rawId === undefined) ? '' : String(rawId).trim();
+        const daysOut = Number(row[daysOutIdx]);
+        if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !id || !Number.isFinite(daysOut)) {
+            skippedRows++;
+            continue;
+        }
+        (days[dateKey] ||= {})[id] = {
+            lda: (ldaIdx !== -1) ? normalizeLdaValue(row[ldaIdx]) : null,
+            daysOut,
+        };
+        imported++;
+    }
+    if (imported === 0) {
+        throw new Error('No usable rows found — check the Date, SyStudentID, and Days Out values.');
+    }
+    return { days, rows: imported, skippedRows };
+}
+
+/**
+ * Merge already-parsed day snapshots into the stored history (existing dates
+ * always win) and persist when anything was added.
+ * @returns {{ added: string[], skipped: string[] }}
+ */
+export function importDaysIntoHistory(importedDays) {
+    const { history, added, skipped } = mergeImportedDays(loadLdaHistory(), importedDays);
+    if (added.length > 0) saveLdaHistory(history);
+    return { added, skipped };
+}
+
 /** Flatten the history into CSV (Date, SyStudentID, LDA, Days Out), sorted by date then id. */
 export function historyToCsv(history) {
     const escape = (v) => {
@@ -265,8 +391,7 @@ export async function importHistoryFromLdaSheets() {
             importedDays[target.dateKey] = snapshot;
         }
 
-        const { history, added, skipped } = mergeImportedDays(loadLdaHistory(), importedDays);
-        if (added.length > 0) saveLdaHistory(history);
+        const { added, skipped } = importDaysIntoHistory(importedDays);
         return { scanned: targets.length, added, skipped, unreadable };
     });
 }
