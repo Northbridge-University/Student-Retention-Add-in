@@ -50,14 +50,6 @@ export const defaultWorkbookSettings = [
 		description: 'Whether to include the failing student list.'
 	},
 	{
-		id: 'includeAttendanceList',
-		label: 'Attendance List',
-		type: 'boolean',
-		defaultValue: false,
-		section: 'Create LDA',
-		description: 'Whether to include the low attendance student list.'
-	},
-	{
 		id: 'includeNextAssignmentDue',
 		label: 'Next Assignment Due',
 		type: 'boolean',
