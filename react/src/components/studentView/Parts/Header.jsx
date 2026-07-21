@@ -4,6 +4,7 @@ import { User } from 'lucide-react';
 import { formatName } from '../../utility/Conversion';
 import BounceAnimation from '../../utility/BounceAnimation';
 import DaysOutModal from '../Modal/DaysOutModal';
+import { getRiskIndexConfig, loadLdaHistory, countRiskEpisodesForStudent } from '../../createLDA/riskIndex';
 
 function StudentHeader({ student, selectedRowCount = 1 }) {
   // Use a fallback student object to prevent errors if the prop is null or undefined
@@ -20,6 +21,22 @@ function StudentHeader({ student, selectedRowCount = 1 }) {
   const assignedTo = safeStudent.Assigned;
 
   const daysOut = safeStudent.DaysOut ?? '--'; // Using nullish coalescing to allow 0
+
+  // --- Risk Index: how many separate times this student hit the risk
+  // threshold (default 14 days out), from the LDAHistory document setting
+  // written by Create LDA. Shown as a badge on the Days Out tile when > 0.
+  const riskStudentId = safeStudent.ID ?? safeStudent.StudentNumber ?? null;
+  const risk = React.useMemo(() => {
+    if (riskStudentId === null || riskStudentId === undefined || riskStudentId === '') return null;
+    try {
+      const cfg = getRiskIndexConfig();
+      if (!cfg.enabled) return null;
+      const count = countRiskEpisodesForStudent(loadLdaHistory(), String(riskStudentId).trim(), cfg.threshold);
+      return count > 0 ? { count, threshold: cfg.threshold } : null;
+    } catch {
+      return null;
+    }
+  }, [riskStudentId]);
   // Determine background color for Days Out
   let daysOutBg = 'bg-gray-200';
   let daysOutText = 'text-gray-800';
@@ -344,6 +361,7 @@ function StudentHeader({ student, selectedRowCount = 1 }) {
           <button
             type="button"
             className={`p-2 text-center rounded-lg ${daysOutBg} ${daysOutText} w-20 focus:outline-none`}
+            style={{ position: 'relative' }}
             onClick={() => setShowDaysModal(true)}
             aria-label="Show days out details"
             title="Show days out details"
@@ -352,6 +370,33 @@ function StudentHeader({ student, selectedRowCount = 1 }) {
             <div className={`text-xs font-medium uppercase ${daysOutLabelText}`}>
               {daysOut === 0 ? 'Engaged' : daysOut === 1 ? 'Day Out' : 'Days Out'}
             </div>
+            {risk && (
+              <span
+                aria-label={`Risk Index: hit ${risk.threshold}+ days out ${risk.count} ${risk.count === 1 ? 'time' : 'times'}`}
+                role="status"
+                title={`Risk Index: hit ${risk.threshold}+ days out ${risk.count} ${risk.count === 1 ? 'time' : 'times'}`}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 0,
+                  transform: 'translate(30%, -30%)',
+                  background: '#991b1b', // red-800
+                  color: '#ffffff',
+                  borderRadius: 9999,
+                  fontSize: 10,
+                  minWidth: 18,
+                  padding: '2px 5px',
+                  fontWeight: 700,
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+                  pointerEvents: 'auto',
+                  lineHeight: 1.2,
+                  zIndex: 10
+                }}
+                tabIndex={0}
+              >
+                {risk.count}
+              </span>
+            )}
           </button>
           <button
             type="button"
