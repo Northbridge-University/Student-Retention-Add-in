@@ -14,7 +14,10 @@
  * count correct across weekends/holidays when no LDA sheet is created.
  */
 
-/* global Office */
+/* global Office, Excel */
+
+import { findColumnIndex, normalizeHeader } from '../../../../shared/excel-helpers.js';
+import { STUDENT_ID_ALIASES, STUDENT_NUMBER_ALIASES, LAST_LDA_ALIASES, DAYS_OUT_ALIASES } from '../../../../shared/columnAliases.js';
 
 export const LDA_HISTORY_KEY = 'LDAHistory';
 
@@ -141,6 +144,133 @@ export function countRiskEpisodesForStudent(history, studentId, threshold) {
     return keys.size;
 }
 
+/**
+ * Parse a date-mode LDA sheet name ("LDA 7-21-2026", including same-day
+ * re-run suffixes like "LDA 7-21-2026 (2)") into a history date key.
+ * @returns {string|null} 'YYYY-MM-DD', or null when the name doesn't match.
+ */
+export function parseLdaSheetName(name) {
+    const match = String(name || '').trim().match(/^lda (\d{1,2})-(\d{1,2})-(\d{4})(?: \(\d+\))?$/i);
+    if (!match) return null;
+    const [, month, day, year] = match;
+    if (Number(month) < 1 || Number(month) > 12 || Number(day) < 1 || Number(day) > 31) return null;
+    return `${year}-${pad2(Number(month))}-${pad2(Number(day))}`;
+}
+
+/**
+ * Resolve the snapshot column indices from a raw header row (LDA sheets carry
+ * the Master List's columns, some hidden). Student id prefers SyStudentId and
+ * falls back to Student Number for legacy workbooks.
+ * @returns {{ idIdx: number, ldaIdx: number, daysOutIdx: number }}
+ */
+export function resolveSnapshotIndices(headers) {
+    const normalized = (Array.isArray(headers) ? headers : []).map(normalizeHeader);
+    const idIdx = (() => {
+        const sy = findColumnIndex(normalized, STUDENT_ID_ALIASES);
+        return sy !== -1 ? sy : findColumnIndex(normalized, STUDENT_NUMBER_ALIASES);
+    })();
+    return {
+        idIdx,
+        ldaIdx: findColumnIndex(normalized, LAST_LDA_ALIASES),
+        daysOutIdx: findColumnIndex(normalized, DAYS_OUT_ALIASES),
+    };
+}
+
+/**
+ * Merge imported day snapshots into the history WITHOUT overwriting dates that
+ * already exist — real Create LDA snapshots always win over backfilled data.
+ * @returns {{ history: Object, added: string[], skipped: string[] }}
+ */
+export function mergeImportedDays(history, importedDays) {
+    const days = (history && typeof history === 'object' && history.days && typeof history.days === 'object')
+        ? { ...history.days }
+        : {};
+    const added = [];
+    const skipped = [];
+    for (const dateKey of Object.keys(importedDays || {})) {
+        if (Object.prototype.hasOwnProperty.call(days, dateKey)) {
+            skipped.push(dateKey);
+        } else {
+            days[dateKey] = importedDays[dateKey];
+            added.push(dateKey);
+        }
+    }
+    return { history: { version: 1, days }, added: added.sort(), skipped: skipped.sort() };
+}
+
+/** Flatten the history into CSV (Date, SyStudentID, LDA, Days Out), sorted by date then id. */
+export function historyToCsv(history) {
+    const escape = (v) => {
+        const str = v === null || v === undefined ? '' : String(v);
+        return (/[",\n]/.test(str)) ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    const lines = ['Date,SyStudentID,LDA,Days Out'];
+    const days = (history && history.days) || {};
+    for (const dateKey of Object.keys(days).sort()) {
+        const snapshot = days[dateKey];
+        if (!snapshot || typeof snapshot !== 'object') continue;
+        for (const id of Object.keys(snapshot).sort()) {
+            const entry = snapshot[id] || {};
+            lines.push([dateKey, id, entry.lda ?? '', entry.daysOut ?? ''].map(escape).join(','));
+        }
+    }
+    return lines.join('\n');
+}
+
+/**
+ * Backfill LDAHistory from the workbook's previous date-mode LDA sheets.
+ * Reads every sheet named like "LDA M-D-YYYY", extracts each student's
+ * LDA/Days Out, and merges the results into the stored history — never
+ * overwriting dates that already have a snapshot. Non-LDA rows on those
+ * sheets (titles, spacer rows, secondary table headers) are skipped by the
+ * numeric Days Out requirement.
+ * @returns {Promise<{ scanned: number, added: string[], skipped: string[], unreadable: string[] }>}
+ */
+export async function importHistoryFromLdaSheets() {
+    if (typeof Excel === 'undefined' || !Excel.run) {
+        throw new Error('Excel API not available');
+    }
+    return Excel.run(async (context) => {
+        const sheets = context.workbook.worksheets;
+        sheets.load('items/name');
+        await context.sync();
+
+        const targets = sheets.items
+            .map(s => ({ name: s.name, dateKey: parseLdaSheetName(s.name) }))
+            .filter(t => t.dateKey);
+
+        const importedDays = {};
+        const unreadable = [];
+        for (const target of targets) {
+            const used = sheets.getItem(target.name).getUsedRangeOrNullObject();
+            used.load('values');
+            await context.sync();
+            if (used.isNullObject || !used.values || used.values.length < 2) {
+                unreadable.push(target.name);
+                continue;
+            }
+            const values = used.values;
+            const indices = resolveSnapshotIndices(values[0]);
+            if (indices.idIdx === -1 || indices.daysOutIdx === -1) {
+                unreadable.push(target.name);
+                continue;
+            }
+            const snapshot = buildDailySnapshot(values, indices);
+            if (Object.keys(snapshot).length === 0) {
+                unreadable.push(target.name);
+                continue;
+            }
+            // Same-day duplicates ("LDA 7-21-2026 (2)") are later runs of that
+            // day; iterate in sheet order so the last one wins within the import.
+            importedDays[target.dateKey] = snapshot;
+        }
+
+        const { history, added, skipped } = mergeImportedDays(loadLdaHistory(), importedDays);
+        if (added.length > 0) saveLdaHistory(history);
+        return { scanned: targets.length, added, skipped, unreadable };
+    });
+}
+
 /** First matching count for any of the student's id variants (SyStudentId, Student Number). */
 export function lookupRiskCount(riskIndexMap, ids) {
     for (const id of ids) {
@@ -174,12 +304,20 @@ export function saveLdaHistory(history) {
     }
 }
 
-/** Current Risk Index config from workbook settings (sanitized, with defaults). */
+/**
+ * Current Risk Index config from workbook settings (sanitized, with defaults).
+ * Stored as flat keys (riskIndexEnabled, riskIndexThreshold,
+ * riskIndexShowColumn) to match the Settings page's schema-driven rows.
+ */
 export function getRiskIndexConfig() {
     try {
         if (typeof Office !== 'undefined' && Office.context && Office.context.document && Office.context.document.settings) {
-            const wb = Office.context.document.settings.get('workbookSettings');
-            return sanitizeRiskIndexSettings(wb && wb.riskIndex);
+            const wb = Office.context.document.settings.get('workbookSettings') || {};
+            return sanitizeRiskIndexSettings({
+                enabled: wb.riskIndexEnabled,
+                threshold: wb.riskIndexThreshold,
+                showColumn: wb.riskIndexShowColumn,
+            });
         }
     } catch (e) {
         console.warn('riskIndex: failed to read workbookSettings', e);

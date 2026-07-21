@@ -9,6 +9,10 @@ import {
     countRiskEpisodes,
     countRiskEpisodesForStudent,
     lookupRiskCount,
+    parseLdaSheetName,
+    resolveSnapshotIndices,
+    mergeImportedDays,
+    historyToCsv,
 } from '../riskIndex.js';
 
 describe('sanitizeRiskIndexSettings', () => {
@@ -222,5 +226,101 @@ describe('lookupRiskCount', () => {
         expect(lookupRiskCount(map, ['nope', 'S-99'])).toBe(1);
         expect(lookupRiskCount(map, ['nope'])).toBe(0);
         expect(lookupRiskCount(map, [])).toBe(0);
+    });
+});
+
+describe('parseLdaSheetName', () => {
+    it('parses date-mode LDA sheet names into date keys', () => {
+        expect(parseLdaSheetName('LDA 7-21-2026')).toBe('2026-07-21');
+        expect(parseLdaSheetName('LDA 12-1-2025')).toBe('2025-12-01');
+        expect(parseLdaSheetName('lda 1-05-2026')).toBe('2026-01-05');
+    });
+
+    it('accepts same-day re-run suffixes', () => {
+        expect(parseLdaSheetName('LDA 7-21-2026 (2)')).toBe('2026-07-21');
+    });
+
+    it('rejects non-LDA and campus-mode sheet names', () => {
+        expect(parseLdaSheetName('Master List')).toBeNull();
+        expect(parseLdaSheetName('Downtown Campus')).toBeNull();
+        expect(parseLdaSheetName('LDA')).toBeNull();
+        expect(parseLdaSheetName('LDA 13-40-2026')).toBeNull();
+        expect(parseLdaSheetName('LDA 7-21-26')).toBeNull();
+        expect(parseLdaSheetName('')).toBeNull();
+        expect(parseLdaSheetName(null)).toBeNull();
+    });
+});
+
+describe('resolveSnapshotIndices', () => {
+    it('finds SyStudentID, LDA, and Days Out columns by alias', () => {
+        expect(resolveSnapshotIndices(['Student Name', 'SyStudentID', 'LDA', 'Days Out']))
+            .toEqual({ idIdx: 1, ldaIdx: 2, daysOutIdx: 3 });
+    });
+
+    it('normalizes header case and whitespace', () => {
+        expect(resolveSnapshotIndices(['STUDENT ID', 'Last Date of Attendance', ' days  out ']))
+            .toEqual({ idIdx: 0, ldaIdx: 1, daysOutIdx: 2 });
+    });
+
+    it('falls back to Student Number when no SyStudentID column exists', () => {
+        expect(resolveSnapshotIndices(['Student Number', 'LDA', 'Days Out']).idIdx).toBe(0);
+    });
+
+    it('returns -1 for missing columns', () => {
+        expect(resolveSnapshotIndices(['Foo', 'Bar'])).toEqual({ idIdx: -1, ldaIdx: -1, daysOutIdx: -1 });
+        expect(resolveSnapshotIndices(undefined)).toEqual({ idIdx: -1, ldaIdx: -1, daysOutIdx: -1 });
+    });
+});
+
+describe('mergeImportedDays', () => {
+    const existing = { version: 1, days: { '2026-07-21': { '1': { lda: 'real', daysOut: 14 } } } };
+
+    it('adds new dates and never overwrites existing snapshots', () => {
+        const { history, added, skipped } = mergeImportedDays(existing, {
+            '2026-07-21': { '1': { lda: 'backfilled', daysOut: 99 } },
+            '2026-07-14': { '1': { lda: 'old', daysOut: 7 } },
+        });
+        expect(added).toEqual(['2026-07-14']);
+        expect(skipped).toEqual(['2026-07-21']);
+        expect(history.days['2026-07-21']['1'].lda).toBe('real');
+        expect(history.days['2026-07-14']['1'].lda).toBe('old');
+    });
+
+    it('handles empty inputs', () => {
+        expect(mergeImportedDays(undefined, {})).toEqual({ history: { version: 1, days: {} }, added: [], skipped: [] });
+        const noop = mergeImportedDays(existing, undefined);
+        expect(noop.history).toEqual(existing);
+        expect(noop.added).toEqual([]);
+    });
+});
+
+describe('historyToCsv', () => {
+    it('flattens the history sorted by date then id, with a header row', () => {
+        const csv = historyToCsv({
+            version: 1,
+            days: {
+                '2026-07-21': { '20': { lda: '2026-07-07', daysOut: 14 }, '10': { lda: null, daysOut: 3 } },
+                '2026-07-14': { '10': { lda: '2026-07-01', daysOut: 13 } },
+            },
+        });
+        expect(csv.split('\n')).toEqual([
+            'Date,SyStudentID,LDA,Days Out',
+            '2026-07-14,10,2026-07-01,13',
+            '2026-07-21,10,,3',
+            '2026-07-21,20,2026-07-07,14',
+        ]);
+    });
+
+    it('escapes cells containing commas or quotes', () => {
+        const csv = historyToCsv({
+            version: 1,
+            days: { '2026-07-21': { 'a,b': { lda: 'x"y', daysOut: 5 } } },
+        });
+        expect(csv.split('\n')[1]).toBe('2026-07-21,"a,b","x""y",5');
+    });
+
+    it('returns just the header for empty history', () => {
+        expect(historyToCsv(undefined)).toBe('Date,SyStudentID,LDA,Days Out');
+        expect(historyToCsv({ version: 1, days: {} })).toBe('Date,SyStudentID,LDA,Days Out');
     });
 });
