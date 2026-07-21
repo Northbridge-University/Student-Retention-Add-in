@@ -15,6 +15,7 @@ import { HISTORY_SHEET, MASTER_LIST_SHEET } from '../../../../shared/constants.j
 import { getWorkbookUsers } from '../../services/workbookUsers.js';
 import { loadLdaHistory, historyToCsv } from '../createLDA/riskIndex.js';
 import RiskIndexImportModal from './RiskIndexImportModal'; // <-- ADDED: Risk Index history import modal
+import RiskIndexLeaderboard from './RiskIndexLeaderboard'; // <-- ADDED: ranked at-risk students card
 
 const SUMMARY_BRAND = '#145F82';
 
@@ -669,6 +670,11 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 			// Custom full-width row for the workbook user roster.
 			if (setting.type === 'userslist') {
 				return <UsersList key={setting.id} />;
+			}
+			// Custom full-width row: students ranked by Risk Index. Keyed off the
+			// import modal's open state so closing it reloads fresh history.
+			if (setting.type === 'riskleaderboard') {
+				return <RiskIndexLeaderboard key={setting.id} refreshToken={riskImportModalOpen} />;
 			}
 			return (
 				<div key={setting.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box' }}>

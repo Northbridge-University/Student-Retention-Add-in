@@ -175,6 +175,14 @@ export const defaultWorkbookSettings = [
 		description: 'Download the saved LDA history (date, student ID, LDA, days out) as a CSV file.'
 	},
 	{
+		id: 'riskLeaderboard',
+		label: 'At-Risk Students',
+		type: 'riskleaderboard',
+		defaultValue: null,
+		section: 'Risk Index',
+		description: 'Students ranked by Risk Index, greatest first. Students no longer on the Master List are treated as dropped and hidden.'
+	},
+	{
 		id: 'powerAutomateUrl',
 		label: 'Power Automate',
 		type: 'powerautomate',

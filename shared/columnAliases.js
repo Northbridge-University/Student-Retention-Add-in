@@ -27,6 +27,8 @@ export const STUDENT_NUMBER_ALIASES = ['student number', 'student identifier'];
 
 export const GENDER_ALIASES = ['gender'];
 
+export const PROFILE_PICTURE_ALIASES = ['profile picture', 'photo', 'avatar'];
+
 // ===== Outreach / Status =====
 // "comments"/"notes"/"comment" are also Outreach aliases — workbooks vary on
 // what they call this column. Note these overlap with COMMENT_ALIASES (used

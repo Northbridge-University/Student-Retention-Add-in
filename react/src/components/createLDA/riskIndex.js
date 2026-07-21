@@ -17,7 +17,15 @@
 /* global Office, Excel */
 
 import { findColumnIndex, normalizeHeader } from '../../../../shared/excel-helpers.js';
-import { STUDENT_ID_ALIASES, STUDENT_NUMBER_ALIASES, LAST_LDA_ALIASES, DAYS_OUT_ALIASES } from '../../../../shared/columnAliases.js';
+import {
+    STUDENT_ID_ALIASES,
+    STUDENT_NUMBER_ALIASES,
+    LAST_LDA_ALIASES,
+    DAYS_OUT_ALIASES,
+    STUDENT_NAME_ALIASES,
+    GENDER_ALIASES,
+    PROFILE_PICTURE_ALIASES,
+} from '../../../../shared/columnAliases.js';
 
 export const LDA_HISTORY_KEY = 'LDAHistory';
 
@@ -394,6 +402,54 @@ export async function importHistoryFromLdaSheets() {
         const { added, skipped } = importDaysIntoHistory(importedDays);
         return { scanned: targets.length, added, skipped, unreadable };
     });
+}
+
+/**
+ * Join risk counts with the Master List into a ranked leaderboard.
+ * Only students with a count > 0 AND a current Master List row are included —
+ * ids missing from the master are treated as dropped and left off. Sorted by
+ * count descending, then name.
+ * @param {Map<string, number>} riskCounts - from countRiskEpisodes
+ * @param {Array<Array>} masterValues - Master List matrix (row 0 = headers)
+ * @returns {Array<{ id, name, gender, profilePicture, count }>}
+ */
+export function buildRiskLeaderboard(riskCounts, masterValues) {
+    if (!(riskCounts instanceof Map) || riskCounts.size === 0) return [];
+    if (!Array.isArray(masterValues) || masterValues.length < 2) return [];
+    const normalized = masterValues[0].map(normalizeHeader);
+    const sy = findColumnIndex(normalized, STUDENT_ID_ALIASES);
+    const idIdx = sy !== -1 ? sy : findColumnIndex(normalized, STUDENT_NUMBER_ALIASES);
+    if (idIdx === -1) return [];
+    const nameIdx = findColumnIndex(normalized, STUDENT_NAME_ALIASES);
+    const genderIdx = findColumnIndex(normalized, GENDER_ALIASES);
+    const pfpIdx = findColumnIndex(normalized, PROFILE_PICTURE_ALIASES);
+
+    const asUrl = (v) => {
+        const str = (v === null || v === undefined) ? '' : String(v).trim();
+        return (/^https?:\/\//i.test(str) || str.startsWith('data:image')) ? str : null;
+    };
+
+    const entries = [];
+    const seen = new Set();
+    for (let i = 1; i < masterValues.length; i++) {
+        const row = masterValues[i];
+        if (!row) continue;
+        const rawId = row[idIdx];
+        const id = (rawId === null || rawId === undefined) ? '' : String(rawId).trim();
+        if (!id || seen.has(id)) continue;
+        const count = riskCounts.get(id);
+        if (!count) continue;
+        seen.add(id);
+        entries.push({
+            id,
+            count,
+            name: (nameIdx !== -1) ? String(row[nameIdx] ?? '').trim() : '',
+            gender: (genderIdx !== -1) ? String(row[genderIdx] ?? '').trim() : '',
+            profilePicture: (pfpIdx !== -1) ? asUrl(row[pfpIdx]) : null,
+        });
+    }
+    entries.sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name));
+    return entries;
 }
 
 /** First matching count for any of the student's id variants (SyStudentId, Student Number). */

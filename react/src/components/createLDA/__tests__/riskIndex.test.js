@@ -16,6 +16,7 @@ import {
     parseCsv,
     excelCellToValue,
     rowsToImportedDays,
+    buildRiskLeaderboard,
 } from '../riskIndex.js';
 
 describe('sanitizeRiskIndexSettings', () => {
@@ -409,5 +410,48 @@ describe('rowsToImportedDays', () => {
         expect(() => rowsToImportedDays([header])).toThrow(/no data rows/);
         expect(() => rowsToImportedDays([header, ['bad', '', '', '']])).toThrow(/No usable rows/);
         expect(() => rowsToImportedDays(null)).toThrow(/no data rows/);
+    });
+});
+
+describe('buildRiskLeaderboard', () => {
+    const master = [
+        ['SyStudentID', 'Student Name', 'Gender', 'Profile Picture', 'Days Out'],
+        [10, 'Zeta, Amy', 'Female', 'https://cdn.example/amy.jpg', 15],
+        [20, 'Alpha, Bob', 'Male', '', 3],
+        [30, 'Mid, Cara', '', 'not a url', 20],
+        [40, 'Zero, Dan', 'Male', '', 1],
+    ];
+
+    it('ranks students by count descending, excluding zero-count students', () => {
+        const counts = new Map([['10', 2], ['20', 2], ['30', 5]]);
+        const board = buildRiskLeaderboard(counts, master);
+        expect(board.map(s => s.id)).toEqual(['30', '20', '10']);
+        expect(board[0].count).toBe(5);
+        // ties broken by name: 'Alpha, Bob' before 'Zeta, Amy'
+        expect(board.slice(1).map(s => s.name)).toEqual(['Alpha, Bob', 'Zeta, Amy']);
+    });
+
+    it('drops ids that are no longer on the Master List', () => {
+        const counts = new Map([['10', 1], ['999', 4]]);
+        expect(buildRiskLeaderboard(counts, master).map(s => s.id)).toEqual(['10']);
+    });
+
+    it('only keeps http(s)/data profile picture values', () => {
+        const counts = new Map([['10', 1], ['30', 1]]);
+        const board = buildRiskLeaderboard(counts, master);
+        expect(board.find(s => s.id === '10').profilePicture).toBe('https://cdn.example/amy.jpg');
+        expect(board.find(s => s.id === '30').profilePicture).toBeNull();
+    });
+
+    it('carries gender for the avatar fallback', () => {
+        const counts = new Map([['10', 1]]);
+        expect(buildRiskLeaderboard(counts, master)[0].gender).toBe('Female');
+    });
+
+    it('returns empty for missing inputs or unusable master', () => {
+        expect(buildRiskLeaderboard(new Map(), master)).toEqual([]);
+        expect(buildRiskLeaderboard(new Map([['10', 1]]), null)).toEqual([]);
+        expect(buildRiskLeaderboard(new Map([['10', 1]]), [['No Id Col'], ['x']])).toEqual([]);
+        expect(buildRiskLeaderboard(null, master)).toEqual([]);
     });
 });
