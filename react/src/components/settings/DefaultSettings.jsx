@@ -135,6 +135,46 @@ export const defaultWorkbookSettings = [
 		description: 'Fill color for DNC outreach comments and the phone-column strikethrough.'
 	},
 	{
+		id: 'riskIndexEnabled',
+		label: 'Track Risk Index',
+		type: 'boolean',
+		defaultValue: true,
+		section: 'Risk Index',
+		description: 'Save a daily snapshot of every student\'s LDA and Days Out (stored under LDAHistory in workbook settings) each time an LDA sheet is created — once per day.'
+	},
+	{
+		id: 'riskIndexThreshold',
+		label: 'Risk Threshold',
+		type: 'number',
+		defaultValue: 14,
+		section: 'Risk Index',
+		description: 'Days Out value that counts as a drop-risk hit. Reaching it counts once per drop (per LDA), no matter how many days the student stays out.'
+	},
+	{
+		id: 'riskIndexShowColumn',
+		label: 'RI Column',
+		type: 'boolean',
+		defaultValue: true,
+		section: 'Risk Index',
+		description: 'Add an RI (Risk Index) column next to Days Out on the LDA sheet showing how many times each student has hit the risk threshold.'
+	},
+	{
+		id: 'importLdaHistory',
+		label: 'Import Past Reports',
+		type: 'action',
+		defaultValue: null,
+		section: 'Risk Index',
+		description: 'Scan previous "LDA M-D-YYYY" sheets in this workbook and backfill the history from them. Dates that already have a snapshot are left untouched.'
+	},
+	{
+		id: 'downloadLdaHistory',
+		label: 'Download History',
+		type: 'action',
+		defaultValue: null,
+		section: 'Risk Index',
+		description: 'Download the saved LDA history (date, student ID, LDA, days out) as a CSV file.'
+	},
+	{
 		id: 'powerAutomateUrl',
 		label: 'Power Automate',
 		type: 'powerautomate',
@@ -227,6 +267,13 @@ export const sectionIcons = {
 	'Send Emails': (
 		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 			<path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+		</svg>
+	),
+	'Risk Index': (
+		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+			<path d="M12 21a9 9 0 1 1 9-9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+			<path d="M12 12l4.5-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+			<circle cx="12" cy="12" r="1" fill="currentColor"/>
 		</svg>
 	),
 	'Student History': (

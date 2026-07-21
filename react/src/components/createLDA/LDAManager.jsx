@@ -47,7 +47,7 @@ export default function CreateLDAManager({ onReady } = {}) {
 
   // State for View Management: 'settings' | 'processing' | 'done' | 'error'
   const [view, setView] = useState('settings');
-  const [settingsView, setSettingsView] = useState('main'); // 'main' | 'tags' | 'assigned' | 'inclusions' | 'riskIndex'
+  const [settingsView, setSettingsView] = useState('main'); // 'main' | 'tags' | 'assigned' | 'inclusions'
   const [errorMessage, setErrorMessage] = useState('');
 
   // State for Progress Tracking: { [stepId]: 'pending' | 'active' | 'completed' }
@@ -117,7 +117,13 @@ export default function CreateLDAManager({ onReady } = {}) {
           dncColor: (typeof wb.dncColor === 'string' && wb.dncColor) ? wb.dncColor : prev.dncColor,
           sheetNameMode: wb.sheetNameMode || prev.sheetNameMode,
           advisorAssignment: wb.advisorAssignment || prev.advisorAssignment,
-          riskIndex: wb.riskIndex ? sanitizeRiskIndexSettings(wb.riskIndex) : prev.riskIndex,
+          // Threshold and RI-column live on the Settings taskpane as flat keys;
+          // the Create LDA page only surfaces the enabled toggle.
+          riskIndex: sanitizeRiskIndexSettings({
+            enabled: wb.riskIndexEnabled,
+            threshold: wb.riskIndexThreshold,
+            showColumn: wb.riskIndexShowColumn,
+          }),
         }));
       }
     };
@@ -184,9 +190,13 @@ export default function CreateLDAManager({ onReady } = {}) {
   const handleSettingChange = (key, value) => {
     setLdaSettings((prev) => {
       const next = { ...prev, [key]: value };
-      // Persist shared config (advisor assignment, risk index) to workbook settings
-      if (key === 'advisorAssignment' || key === 'riskIndex') {
+      // Persist shared config to workbook settings
+      if (key === 'advisorAssignment') {
         saveToWorkbookSettings(key, value);
+      } else if (key === 'riskIndex') {
+        // Only the enabled flag is editable here; threshold and RI-column are
+        // flat keys owned by the Settings taskpane.
+        saveToWorkbookSettings('riskIndexEnabled', !!value.enabled);
       }
       return next;
     });
@@ -726,15 +736,6 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
     );
   }
 
-  if (settingsView === 'riskIndex') {
-    return (
-      <RiskIndexSettings
-        settings={settings}
-        onSettingChange={onSettingChange}
-        onBack={() => setSettingsView('main')}
-      />
-    );
-  }
 
   if (settingsView === 'inclusions') {
     return (
@@ -770,6 +771,20 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
           tooltip="Use each student's next assignment due date in retention messaging."
           isOn={settings.includeNextAssignmentDue}
           onToggle={() => handleToggle('includeNextAssignmentDue')}
+        />
+
+        <ToggleRow
+          key="toggle-risk-index"
+          label={
+            <span className="inline-flex items-center gap-2">
+              Include
+              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-200 text-red-800">RI</span>
+              Risk Index
+            </span>
+          }
+          tooltip="Save today's LDA/Days Out snapshot and add the RI column showing how many times each student hit the risk threshold. Configure it in Settings under Risk Index."
+          isOn={settings.riskIndex?.enabled ?? true}
+          onToggle={() => onSettingChange('riskIndex', { ...settings.riskIndex, enabled: !(settings.riskIndex?.enabled ?? true) })}
         />
       </div>
     );
@@ -844,6 +859,7 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
           settings.includeFailingList,
           settings.includeAttendanceList,
           settings.includeNextAssignmentDue,
+          settings.riskIndex?.enabled ?? true,
         ].filter(Boolean).length;
         return (
           <button
@@ -893,90 +909,6 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         <ChevronRight className="w-4 h-4 text-slate-400" />
       </button>
 
-      <button
-        type="button"
-        onClick={() => setSettingsView('riskIndex')}
-        className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100/50 hover:border-slate-200 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-slate-700 font-medium text-sm">Risk Index</span>
-          <Info
-            title="Track how many times each student has hit the risk threshold of days out."
-            className="w-4 h-4 text-slate-400 cursor-help hover:text-slate-600"
-          />
-          {settings.riskIndex?.enabled && (
-            <span className="text-[10px] font-semibold text-white bg-[#145F82] px-1.5 py-0.5 rounded-full">ON</span>
-          )}
-        </div>
-        <ChevronRight className="w-4 h-4 text-slate-400" />
-      </button>
-    </div>
-  );
-}
-
-// --- Risk Index Settings ---
-
-function RiskIndexSettings({ settings, onSettingChange, onBack }) {
-  const riskIndex = settings.riskIndex || { ...DEFAULT_RISK_INDEX_SETTINGS };
-
-  const updateRiskIndex = (updates) => {
-    onSettingChange('riskIndex', { ...riskIndex, ...updates });
-  };
-
-  return (
-    <div className="flex flex-col gap-4 w-full animate-in fade-in slide-in-from-right-4 duration-300">
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-1 text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors w-fit"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back
-      </button>
-
-      <ToggleRow
-        key="toggle-risk-index"
-        label="Track Risk Index"
-        tooltip="Save a daily snapshot of every student's LDA and Days Out (stored under LDAHistory in workbook settings) each time an LDA sheet is created — once per day."
-        isOn={riskIndex.enabled}
-        onToggle={() => updateRiskIndex({ enabled: !riskIndex.enabled })}
-      />
-
-      <div className={`flex flex-col gap-4 transition-all duration-300 overflow-hidden ${riskIndex.enabled ? 'opacity-100 max-h-96' : 'opacity-0 max-h-0'}`}>
-        <div className="flex items-center justify-between p-3 bg-slate-50/50 rounded-xl border border-slate-100/50 hover:border-slate-200 transition-colors">
-          <div className="flex items-center gap-2">
-            <label htmlFor="riskThreshold" className="text-slate-700 font-medium text-sm">
-              Risk Threshold
-            </label>
-            <Info
-              title="Days Out value that counts as a drop-risk hit. Reaching it counts once per drop (per LDA), no matter how many days the student stays out."
-              className="w-4 h-4 text-slate-400 cursor-help hover:text-slate-600"
-            />
-          </div>
-          <input
-            id="riskThreshold"
-            type="number"
-            min="1"
-            value={riskIndex.threshold}
-            onChange={(e) => updateRiskIndex({ threshold: Number(e.target.value) })}
-            className="w-24 border border-slate-200 bg-white rounded-lg px-3 py-1.5 text-right text-sm focus:outline-none focus:ring-2 focus:ring-[#145F82]/20 focus:border-[#145F82] transition-all"
-          />
-        </div>
-
-        <ToggleRow
-          key="toggle-risk-column"
-          label={
-            <span className="inline-flex items-center gap-2">
-              Show
-              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-200 text-red-800">RI</span>
-              Column
-            </span>
-          }
-          tooltip="Add an RI (Risk Index) column next to Days Out on the LDA sheet showing how many times each student has hit the risk threshold."
-          isOn={riskIndex.showColumn}
-          onToggle={() => updateRiskIndex({ showColumn: !riskIndex.showColumn })}
-        />
-      </div>
     </div>
   );
 }
