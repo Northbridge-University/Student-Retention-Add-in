@@ -13,6 +13,9 @@ import {
     resolveSnapshotIndices,
     mergeImportedDays,
     historyToCsv,
+    parseCsv,
+    excelCellToValue,
+    rowsToImportedDays,
 } from '../riskIndex.js';
 
 describe('sanitizeRiskIndexSettings', () => {
@@ -322,5 +325,89 @@ describe('historyToCsv', () => {
     it('returns just the header for empty history', () => {
         expect(historyToCsv(undefined)).toBe('Date,SyStudentID,LDA,Days Out');
         expect(historyToCsv({ version: 1, days: {} })).toBe('Date,SyStudentID,LDA,Days Out');
+    });
+});
+
+describe('parseCsv', () => {
+    it('parses plain rows', () => {
+        expect(parseCsv('a,b,c\n1,2,3')).toEqual([['a', 'b', 'c'], ['1', '2', '3']]);
+    });
+
+    it('handles quoted fields, escaped quotes, and embedded delimiters', () => {
+        expect(parseCsv('"a,b","x""y",plain\n1,2,3')).toEqual([['a,b', 'x"y', 'plain'], ['1', '2', '3']]);
+        expect(parseCsv('"line\nbreak",2')).toEqual([['line\nbreak', '2']]);
+    });
+
+    it('handles CRLF and trailing newlines', () => {
+        expect(parseCsv('a,b\r\n1,2\r\n')).toEqual([['a', 'b'], ['1', '2']]);
+    });
+
+    it('drops fully empty rows', () => {
+        expect(parseCsv('a,b\n\n1,2\n,\n')).toEqual([['a', 'b'], ['1', '2']]);
+    });
+});
+
+describe('excelCellToValue', () => {
+    it('passes through primitives and Dates', () => {
+        expect(excelCellToValue('x')).toBe('x');
+        expect(excelCellToValue(14)).toBe(14);
+        const d = new Date(Date.UTC(2026, 6, 21));
+        expect(excelCellToValue(d)).toBe(d);
+        expect(excelCellToValue(null)).toBe('');
+        expect(excelCellToValue(undefined)).toBe('');
+    });
+
+    it('unwraps rich text, formula results, and hyperlinks', () => {
+        expect(excelCellToValue({ richText: [{ text: 'Hello ' }, { text: 'World' }] })).toBe('Hello World');
+        expect(excelCellToValue({ formula: 'A1+A2', result: 14 })).toBe(14);
+        expect(excelCellToValue({ text: 'Link', hyperlink: 'https://x' })).toBe('Link');
+        expect(excelCellToValue({ hyperlink: 'https://x' })).toBe('https://x');
+    });
+});
+
+describe('rowsToImportedDays', () => {
+    const header = ['Date', 'SyStudentID', 'LDA', 'Days Out'];
+
+    it('converts the Download History layout back into day snapshots', () => {
+        const { days, rows, skippedRows } = rowsToImportedDays([
+            header,
+            ['2026-07-14', '10', '2026-07-01', '13'],
+            ['2026-07-14', '20', '', '5'],
+            ['2026-07-21', '10', '2026-07-07', '14'],
+        ]);
+        expect(rows).toBe(3);
+        expect(skippedRows).toBe(0);
+        expect(days).toEqual({
+            '2026-07-14': { '10': { lda: '2026-07-01', daysOut: 13 }, '20': { lda: null, daysOut: 5 } },
+            '2026-07-21': { '10': { lda: '2026-07-07', daysOut: 14 } },
+        });
+    });
+
+    it('accepts alias headers, slash dates, numeric ids, and Date objects', () => {
+        const { days } = rowsToImportedDays([
+            ['date', 'Student ID', 'Last Date of Attendance', 'days out'],
+            ['7/14/2026', 10, new Date(Date.UTC(2026, 6, 1)), 13],
+        ]);
+        expect(days['2026-07-14']['10']).toEqual({ lda: '2026-07-01', daysOut: 13 });
+    });
+
+    it('counts unusable rows as skipped', () => {
+        const { days, rows, skippedRows } = rowsToImportedDays([
+            header,
+            ['not a date', '10', '', '13'],
+            ['2026-07-14', '', '', '13'],
+            ['2026-07-14', '10', '', 'n/a'],
+            ['2026-07-14', '10', '', '13'],
+        ]);
+        expect(rows).toBe(1);
+        expect(skippedRows).toBe(3);
+        expect(Object.keys(days)).toEqual(['2026-07-14']);
+    });
+
+    it('throws on missing required columns or no usable rows', () => {
+        expect(() => rowsToImportedDays([['Foo', 'Bar'], ['1', '2']])).toThrow(/Missing required/);
+        expect(() => rowsToImportedDays([header])).toThrow(/no data rows/);
+        expect(() => rowsToImportedDays([header, ['bad', '', '', '']])).toThrow(/No usable rows/);
+        expect(() => rowsToImportedDays(null)).toThrow(/no data rows/);
     });
 });

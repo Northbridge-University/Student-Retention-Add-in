@@ -13,7 +13,8 @@ import UserInfoDisplay from '../utility/UserInfoDisplay'; // <-- User info from 
 import About from '../about/About'; // <-- ADDED: Import About component for Help tab
 import { HISTORY_SHEET, MASTER_LIST_SHEET } from '../../../../shared/constants.js';
 import { getWorkbookUsers } from '../../services/workbookUsers.js';
-import { importHistoryFromLdaSheets, loadLdaHistory, historyToCsv } from '../createLDA/riskIndex.js';
+import { loadLdaHistory, historyToCsv } from '../createLDA/riskIndex.js';
+import RiskIndexImportModal from './RiskIndexImportModal'; // <-- ADDED: Risk Index history import modal
 
 const SUMMARY_BRAND = '#145F82';
 
@@ -232,8 +233,8 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 	// Create Student History sheet state
 	const [creatingHistorySheet, setCreatingHistorySheet] = useState(false);
 
-	// Risk Index: LDA history import/download state
-	const [importingLdaHistory, setImportingLdaHistory] = useState(false);
+	// Risk Index: LDA history import modal + download state
+	const [riskImportModalOpen, setRiskImportModalOpen] = useState(false);
 	const [downloadingLdaHistory, setDownloadingLdaHistory] = useState(false);
 
 	// Default headers for a freshly-created Student History sheet. Each name is
@@ -446,31 +447,6 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 			alert(err.message || 'Failed to create Student History sheet');
 		} finally {
 			setCreatingHistorySheet(false);
-		}
-	};
-
-	// Risk Index: backfill LDAHistory from previous "LDA M-D-YYYY" sheets
-	const importLdaHistory = async () => {
-		if (importingLdaHistory) return;
-		setImportingLdaHistory(true);
-		try {
-			const result = await importHistoryFromLdaSheets();
-			if (result.scanned === 0) {
-				alert('No previous LDA sheets found. This looks for sheets named like "LDA 7-21-2026".');
-			} else {
-				const parts = [`Scanned ${result.scanned} LDA sheet${result.scanned === 1 ? '' : 's'}.`];
-				parts.push(result.added.length > 0
-					? `Imported ${result.added.length} day${result.added.length === 1 ? '' : 's'} of history.`
-					: 'Nothing new to import.');
-				if (result.skipped.length > 0) parts.push(`${result.skipped.length} already in history (left untouched).`);
-				if (result.unreadable.length > 0) parts.push(`Skipped unreadable: ${result.unreadable.join(', ')}.`);
-				alert(parts.join('\n'));
-			}
-		} catch (err) {
-			console.error('Failed to import LDA history:', err);
-			alert(err.message || 'Failed to import LDA history');
-		} finally {
-			setImportingLdaHistory(false);
 		}
 	};
 
@@ -911,8 +887,8 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 										greyedReason: noHistorySheet ? `No "${HISTORY_SHEET}" sheet found — nothing to download` : undefined,
 									},
 									importLdaHistory: {
-										run: importLdaHistory,
-										busy: importingLdaHistory,
+										run: () => setRiskImportModalOpen(true),
+										busy: false,
 										icon: importIcon,
 										idle: 'Import',
 										busyLabel: 'Importing...',
@@ -1270,6 +1246,11 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 					dncColor: workbookSettingsState.dncColor ?? '#f2bdbd',
 				}}
 				onChange={updateWorkbookSetting}
+			/>
+
+			<RiskIndexImportModal
+				isOpen={riskImportModalOpen}
+				onClose={() => setRiskImportModalOpen(false)}
 			/>
 		</div>
 	);
