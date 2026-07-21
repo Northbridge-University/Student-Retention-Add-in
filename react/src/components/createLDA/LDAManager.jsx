@@ -28,7 +28,6 @@ export default function CreateLDAManager({ onReady } = {}) {
   const [ldaSettings, setLdaSettings] = useState({
     daysOut: 5,
     includeFailingList: false,
-    includeAttendanceList: false,
     includeLDATag: true,
     includeDNCTag: true,
     includeNextAssignmentDue: true,
@@ -106,7 +105,6 @@ export default function CreateLDAManager({ onReady } = {}) {
         setLdaSettings(prev => ({
           daysOut: (wb.daysOut !== undefined && wb.daysOut !== null) ? Number(wb.daysOut) : prev.daysOut,
           includeFailingList: (wb.includeFailingList !== undefined) ? !!wb.includeFailingList : prev.includeFailingList,
-          includeAttendanceList: (wb.includeAttendanceList !== undefined) ? !!wb.includeAttendanceList : prev.includeAttendanceList,
           includeLDATag: (wb.includeLDATag !== undefined) ? !!wb.includeLDATag : ((wb.includeLdatTag !== undefined) ? !!wb.includeLdatTag : prev.includeLDATag),
           includeDNCTag: (wb.includeDNCTag !== undefined) ? !!wb.includeDNCTag : ((wb.includeDncTag !== undefined) ? !!wb.includeDncTag : prev.includeDNCTag),
           includeNextAssignmentDue: (wb.includeNextAssignmentDue !== undefined) ? !!wb.includeNextAssignmentDue : prev.includeNextAssignmentDue,
@@ -758,14 +756,6 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         />
 
         <ToggleRow
-          key="toggle-attendance-list"
-          label="Include Attendance List"
-          tooltip="Add a third table listing students with attendance below 60%."
-          isOn={settings.includeAttendanceList}
-          onToggle={() => handleToggle('includeAttendanceList')}
-        />
-
-        <ToggleRow
           key="toggle-next-assignment-due"
           label="Include Next Assignment Due"
           tooltip="Use each student's next assignment due date in retention messaging."
@@ -857,7 +847,6 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
       {(() => {
         const inclusionsOn = [
           settings.includeFailingList,
-          settings.includeAttendanceList,
           settings.includeNextAssignmentDue,
           settings.riskIndex?.enabled ?? true,
         ].filter(Boolean).length;
@@ -1013,7 +1002,6 @@ function AssignedSettings({ settings, onSettingChange, onBack }) {
           console.group('LDA Report Settings');
           console.log('Days Out Threshold:', settings.daysOut ?? 5);
           console.log('Include Failing List:', settings.includeFailingList ? 'YES' : 'NO');
-          console.log('Include Attendance List:', settings.includeAttendanceList ? 'YES' : 'NO');
           console.log('Even Split:', assignment.evenSplit ? 'ON' : 'OFF');
           console.log('Total Advisors:', advisors.length, '| Active Today:', activeAdvisors.length);
           console.groupEnd();
@@ -1054,7 +1042,7 @@ function AssignedSettings({ settings, onSettingChange, onBack }) {
         .catch(() => { setDistribution([]); setDistLoading(false); });
     }, 300);
     return () => clearTimeout(timer);
-  }, [assignment.enabled, assignment.evenSplit, advisors, settings.daysOut, settings.includeFailingList, settings.includeAttendanceList, filterModalAdvisor]);
+  }, [assignment.enabled, assignment.evenSplit, advisors, settings.daysOut, settings.includeFailingList, filterModalAdvisor]);
 
   const updateAssignment = (updates) => {
     onSettingChange('advisorAssignment', { ...assignment, ...updates });
@@ -1430,7 +1418,7 @@ function AdvisorFilterModal({ advisor: initialAdvisor, programVersions, pvLoadin
           <div>
             <p className="text-xs font-medium text-slate-500 mb-2">List Preference</p>
             <div className="flex gap-1.5">
-              {[{ key: 'lda', label: 'LDA' }, { key: 'failing', label: 'Failing' }, { key: 'attendance', label: 'Attendance' }].map(({ key, label }) => {
+              {[{ key: 'lda', label: 'LDA' }, { key: 'failing', label: 'Failing' }].map(({ key, label }) => {
                 const isSelected = (advisor.listPreference || []).includes(key);
                 return (
                   <button
