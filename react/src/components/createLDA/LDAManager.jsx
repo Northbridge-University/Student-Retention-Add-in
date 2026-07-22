@@ -8,6 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import { Info, CheckCircle2, Circle, Loader2, ArrowLeft, AlertCircle, ChevronRight, Plus, Pencil, Trash2, X, ClipboardList } from 'lucide-react';
 import { createLDA, detectCampuses, detectProgramVersions, predictAdvisorDistribution, checkMissingLDAColumns, addColumnsToMasterList, checkMasterListExists } from './ldaProcessor';
+import { DEFAULT_RISK_INDEX_SETTINGS, sanitizeRiskIndexSettings } from './riskIndex';
 
 // --- CONFIGURATION: Steps matching the processor logic ---
 const PROCESS_STEPS = [
@@ -27,7 +28,6 @@ export default function CreateLDAManager({ onReady } = {}) {
   const [ldaSettings, setLdaSettings] = useState({
     daysOut: 5,
     includeFailingList: false,
-    includeAttendanceList: false,
     includeLDATag: true,
     includeDNCTag: true,
     includeNextAssignmentDue: true,
@@ -40,7 +40,8 @@ export default function CreateLDAManager({ onReady } = {}) {
     advisorAssignment: {
       enabled: false,
       advisors: []
-    }
+    },
+    riskIndex: { ...DEFAULT_RISK_INDEX_SETTINGS }
   });
 
   // State for View Management: 'settings' | 'processing' | 'done' | 'error'
@@ -104,7 +105,6 @@ export default function CreateLDAManager({ onReady } = {}) {
         setLdaSettings(prev => ({
           daysOut: (wb.daysOut !== undefined && wb.daysOut !== null) ? Number(wb.daysOut) : prev.daysOut,
           includeFailingList: (wb.includeFailingList !== undefined) ? !!wb.includeFailingList : prev.includeFailingList,
-          includeAttendanceList: (wb.includeAttendanceList !== undefined) ? !!wb.includeAttendanceList : prev.includeAttendanceList,
           includeLDATag: (wb.includeLDATag !== undefined) ? !!wb.includeLDATag : ((wb.includeLdatTag !== undefined) ? !!wb.includeLdatTag : prev.includeLDATag),
           includeDNCTag: (wb.includeDNCTag !== undefined) ? !!wb.includeDNCTag : ((wb.includeDncTag !== undefined) ? !!wb.includeDncTag : prev.includeDNCTag),
           includeNextAssignmentDue: (wb.includeNextAssignmentDue !== undefined) ? !!wb.includeNextAssignmentDue : prev.includeNextAssignmentDue,
@@ -115,6 +115,13 @@ export default function CreateLDAManager({ onReady } = {}) {
           dncColor: (typeof wb.dncColor === 'string' && wb.dncColor) ? wb.dncColor : prev.dncColor,
           sheetNameMode: wb.sheetNameMode || prev.sheetNameMode,
           advisorAssignment: wb.advisorAssignment || prev.advisorAssignment,
+          // Threshold and RI-column live on the Settings taskpane as flat keys;
+          // the Create LDA page only surfaces the enabled toggle.
+          riskIndex: sanitizeRiskIndexSettings({
+            enabled: wb.riskIndexEnabled,
+            threshold: wb.riskIndexThreshold,
+            showColumn: wb.riskIndexShowColumn,
+          }),
         }));
       }
     };
@@ -181,24 +188,28 @@ export default function CreateLDAManager({ onReady } = {}) {
   const handleSettingChange = (key, value) => {
     setLdaSettings((prev) => {
       const next = { ...prev, [key]: value };
-      // Persist advisorAssignment to workbook settings
+      // Persist shared config to workbook settings
       if (key === 'advisorAssignment') {
-        saveAdvisorAssignmentToWorkbook(value);
+        saveToWorkbookSettings(key, value);
+      } else if (key === 'riskIndex') {
+        // Only the enabled flag is editable here; threshold and RI-column are
+        // flat keys owned by the Settings taskpane.
+        saveToWorkbookSettings('riskIndexEnabled', !!value.enabled);
       }
       return next;
     });
   };
 
-  const saveAdvisorAssignmentToWorkbook = (advisorAssignment) => {
+  const saveToWorkbookSettings = (key, value) => {
     try {
       if (typeof window !== 'undefined' && window.Office && Office.context && Office.context.document && Office.context.document.settings) {
         const wb = Office.context.document.settings.get('workbookSettings') || {};
-        wb.advisorAssignment = advisorAssignment;
+        wb[key] = value;
         Office.context.document.settings.set('workbookSettings', wb);
         Office.context.document.settings.saveAsync(() => {});
       }
     } catch (e) {
-      console.error('Failed to save advisor assignment:', e);
+      console.error(`Failed to save ${key}:`, e);
     }
   };
 
@@ -723,6 +734,7 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
     );
   }
 
+
   if (settingsView === 'inclusions') {
     return (
       <div className="flex flex-col gap-4 w-full animate-in fade-in slide-in-from-right-4 duration-300">
@@ -744,19 +756,25 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         />
 
         <ToggleRow
-          key="toggle-attendance-list"
-          label="Include Attendance List"
-          tooltip="Add a third table listing students with attendance below 60%."
-          isOn={settings.includeAttendanceList}
-          onToggle={() => handleToggle('includeAttendanceList')}
-        />
-
-        <ToggleRow
           key="toggle-next-assignment-due"
           label="Include Next Assignment Due"
           tooltip="Use each student's next assignment due date in retention messaging."
           isOn={settings.includeNextAssignmentDue}
           onToggle={() => handleToggle('includeNextAssignmentDue')}
+        />
+
+        <ToggleRow
+          key="toggle-risk-index"
+          label={
+            <span className="inline-flex items-center gap-2">
+              Include
+              <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-200 text-red-800">RI</span>
+              Risk Index
+            </span>
+          }
+          tooltip="Save today's LDA/Days Out snapshot and add the RI column showing how many times each student hit the risk threshold. Configure it in Settings under Risk Index."
+          isOn={settings.riskIndex?.enabled ?? false}
+          onToggle={() => onSettingChange('riskIndex', { ...settings.riskIndex, enabled: !(settings.riskIndex?.enabled ?? false) })}
         />
       </div>
     );
@@ -829,8 +847,8 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
       {(() => {
         const inclusionsOn = [
           settings.includeFailingList,
-          settings.includeAttendanceList,
           settings.includeNextAssignmentDue,
+          settings.riskIndex?.enabled ?? false,
         ].filter(Boolean).length;
         return (
           <button
@@ -879,6 +897,7 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         </div>
         <ChevronRight className="w-4 h-4 text-slate-400" />
       </button>
+
     </div>
   );
 }
@@ -983,7 +1002,6 @@ function AssignedSettings({ settings, onSettingChange, onBack }) {
           console.group('LDA Report Settings');
           console.log('Days Out Threshold:', settings.daysOut ?? 5);
           console.log('Include Failing List:', settings.includeFailingList ? 'YES' : 'NO');
-          console.log('Include Attendance List:', settings.includeAttendanceList ? 'YES' : 'NO');
           console.log('Even Split:', assignment.evenSplit ? 'ON' : 'OFF');
           console.log('Total Advisors:', advisors.length, '| Active Today:', activeAdvisors.length);
           console.groupEnd();
@@ -1024,7 +1042,7 @@ function AssignedSettings({ settings, onSettingChange, onBack }) {
         .catch(() => { setDistribution([]); setDistLoading(false); });
     }, 300);
     return () => clearTimeout(timer);
-  }, [assignment.enabled, assignment.evenSplit, advisors, settings.daysOut, settings.includeFailingList, settings.includeAttendanceList, filterModalAdvisor]);
+  }, [assignment.enabled, assignment.evenSplit, advisors, settings.daysOut, settings.includeFailingList, filterModalAdvisor]);
 
   const updateAssignment = (updates) => {
     onSettingChange('advisorAssignment', { ...assignment, ...updates });
@@ -1400,7 +1418,7 @@ function AdvisorFilterModal({ advisor: initialAdvisor, programVersions, pvLoadin
           <div>
             <p className="text-xs font-medium text-slate-500 mb-2">List Preference</p>
             <div className="flex gap-1.5">
-              {[{ key: 'lda', label: 'LDA' }, { key: 'failing', label: 'Failing' }, { key: 'attendance', label: 'Attendance' }].map(({ key, label }) => {
+              {[{ key: 'lda', label: 'LDA' }, { key: 'failing', label: 'Failing' }].map(({ key, label }) => {
                 const isSelected = (advisor.listPreference || []).includes(key);
                 return (
                   <button

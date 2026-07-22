@@ -1,5 +1,5 @@
 // 2025-12-11 11:28 EST - Version 3.8.0 - Updated Program bolding: 'in'/'with' remain normal, text AFTER them is bolded
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   IdCardLanyard,
   Mail,
@@ -11,11 +11,23 @@ import {
   LogIn,
   UserCheck,
   Lock,
-  Activity
+  Activity,
+  Phone,
+  Plus,
+  Pencil
 } from 'lucide-react';
-import callIcon from '../../../assets/icons/call-icon.png';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatExcelDate } from '../../utility/Conversion';
+import { copyToClipboard } from '../../utility/clipboard';
+import chromeExtensionService from '../../../../../shared/chromeExtensionService.js';
+import AddEmergencyContactModal from '../Modal/AddEmergencyContactModal';
+import EmergencyContactCard, { EmergencyContactSkeleton } from '../Parts/EmergencyContactCard';
+import {
+  getEmergencyContacts,
+  addEmergencyContact,
+  saveEmergencyContacts,
+  contactListsEqual
+} from '../../../services/emergencyContacts';
 
 // A small reusable component for displaying a single detail item.
 const DetailItem = ({ label, value }) => {
@@ -42,44 +54,6 @@ const DetailItem = ({ label, value }) => {
       <span style={valueStyles}>{value}</span>
     </div>
   );
-};
-
-// Utility for copy-to-clipboard with Fallback mechanism
-const copyToClipboard = async (text) => {
-  if (!text) return;
-
-  // 1. Try Modern Async API
-  if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch (err) {
-      console.warn('Clipboard API failed, attempting fallback...', err);
-    }
-  }
-
-  // 2. Fallback: document.execCommand('copy')
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    ta.style.top = '0';
-    ta.setAttribute('readonly', '');
-    
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    
-    const successful = document.execCommand('copy');
-    document.body.removeChild(ta);
-    
-    if (!successful) {
-        console.error('Fallback copy failed.');
-    }
-  } catch (err) {
-    console.error('All copy methods failed', err);
-  }
 };
 
 // Helper to format ISO strings (e.g. 2025-11-16 17:47:43+00:00)
@@ -211,7 +185,7 @@ const style = `
 `;
 
 // Updated CopyField to accept 'displayValue' (React Node) separate from 'value' (Clipboard Text)
-function CopyField({ label, value, displayValue, id, Icon, iconSrc }) {
+function CopyField({ label, value, displayValue, id, Icon }) {
   const [copied, setCopied] = useState(false);
 
   // If there is no value, omit the component entirely from the view
@@ -252,9 +226,7 @@ function CopyField({ label, value, displayValue, id, Icon, iconSrc }) {
             transition: 'opacity 0.7s ease'
           }}
         />
-        {iconSrc ? (
-          <img src={iconSrc} alt="" style={{ width: 18, height: 18, flexShrink: 0 }} />
-        ) : Icon ? (
+        {Icon ? (
           <Icon size={18} color="#6b7280" style={{ flexShrink: 0 }} />
         ) : null}
         <div style={{ flex: 1 }}>
@@ -274,11 +246,142 @@ function StudentDetails({ student }) {
   const [page, setPage] = useState(0);
   const totalPages = 3;
 
+  // State for the Emergency Contact view toggle
+  const [showEmergency, setShowEmergency] = useState(false);
+
+  // State for the "Add Emergency Contact" modal
+  const [showAddEmergencyModal, setShowAddEmergencyModal] = useState(false);
+
+  // Saved emergency contacts for this student, plus an edit-mode toggle.
+  const [emergencyContacts, setEmergencyContacts] = useState([]);
+  const [emergencyEditMode, setEmergencyEditMode] = useState(false);
+  // Working copy of the contacts while editing (committed on exit).
+  const [emergencyDraft, setEmergencyDraft] = useState([]);
+  // True while a newly added contact is being persisted (shows a loading card).
+  const [savingEmergency, setSavingEmergency] = useState(false);
+  // True while the edit draft is being persisted (guards double pencil clicks).
+  const [savingEmergencyEdit, setSavingEmergencyEdit] = useState(false);
+  // Set after a blocked save so invalid (empty) required fields get flagged.
+  const [showEmergencyValidation, setShowEmergencyValidation] = useState(false);
+  // Non-empty when the last save attempt failed — edits stay open so nothing is lost.
+  const [emergencyEditError, setEmergencyEditError] = useState('');
+
+  // The SyStudentId (canonical ID) is the identifier we key contacts by.
+  const studentId = student && (student.ID ?? student.StudentNumber);
+
+  // Load saved emergency contacts whenever the viewed student changes.
+  // Any in-progress draft is discarded on purpose — carrying edits across
+  // students would risk writing one student's contacts onto another.
+  useEffect(() => {
+    setEmergencyEditMode(false);
+    setEmergencyDraft([]);
+    setShowEmergencyValidation(false);
+    setEmergencyEditError('');
+    setEmergencyContacts(getEmergencyContacts(studentId));
+  }, [studentId]);
+
   const handlePrev = () => setPage((prev) => Math.max(0, prev - 1));
   const handleNext = () => setPage((prev) => Math.min(totalPages - 1, prev + 1));
 
+  const toggleEmergency = () => setShowEmergency((prev) => !prev);
+
+  const handleAddEmergency = () => {
+    setShowAddEmergencyModal(true);
+  };
+
+  const closeEmergencyEdit = () => {
+    setEmergencyEditMode(false);
+    setEmergencyDraft([]);
+    setShowEmergencyValidation(false);
+    setEmergencyEditError('');
+  };
+
+  // The header pencil button toggles edit mode. Entering edit takes a working
+  // copy of the contacts; clicking again saves the draft and closes the state.
+  const handleToggleEmergencyEdit = async () => {
+    if (savingEmergencyEdit) return; // save already in flight
+    if (!emergencyEditMode) {
+      setEmergencyDraft(emergencyContacts.map((c) => ({ ...c })));
+      setEmergencyEditMode(true);
+      return;
+    }
+
+    // Block the save if any remaining contact lost its name or number —
+    // saveEmergencyContacts would silently drop those entries.
+    const hasInvalid = emergencyDraft.some(
+      (c) => !(c.name || '').trim() || !(c.number || '').trim()
+    );
+    if (hasInvalid) {
+      setShowEmergencyValidation(true);
+      return;
+    }
+
+    // Nothing changed — just close, no saveAsync round-trip.
+    if (contactListsEqual(emergencyDraft, emergencyContacts)) {
+      closeEmergencyEdit();
+      return;
+    }
+
+    setSavingEmergencyEdit(true);
+    try {
+      const saved = await saveEmergencyContacts(studentId, emergencyDraft);
+      if (saved) {
+        setEmergencyContacts(saved);
+        closeEmergencyEdit();
+      } else {
+        // Keep edit mode (and the draft) open so the edits aren't lost.
+        setEmergencyEditError("Couldn't save changes — try again.");
+      }
+    } finally {
+      setSavingEmergencyEdit(false);
+    }
+  };
+
+  // Update a single field of a contact within the edit draft.
+  const handleEditEmergencyContact = (updatedContact) => {
+    setEmergencyDraft((prev) =>
+      prev.map((c) => (c.id === updatedContact.id ? updatedContact : c))
+    );
+  };
+
+  // Remove a contact from the edit draft (persisted when edit mode closes).
+  const handleRemoveEmergencyContact = (contact) => {
+    if (!contact || !contact.id) return;
+    setEmergencyDraft((prev) => prev.filter((c) => c.id !== contact.id));
+  };
+
+  // Send the contact's number to the Chrome extension call queue, mirroring
+  // the ribbon call button's direct-phone path (autoCall = true).
+  const handleCallEmergencyContact = (contact) => {
+    const number = (contact?.number || '').trim();
+    if (!number) return;
+    chromeExtensionService.sendSelectedStudents(
+      [{
+        name: student.StudentName || '',
+        syStudentId: student.ID || '',
+        phone: number,
+        otherPhone: '',
+        directPhone: number,
+        isOtherContact: true
+      }],
+      number,
+      true
+    );
+  };
+
+  const handleAddEmergencyContact = async (contact) => {
+    setSavingEmergency(true);
+    try {
+      const updated = await addEmergencyContact(studentId, contact);
+      if (updated) setEmergencyContacts(updated);
+    } finally {
+      setSavingEmergency(false);
+    }
+  };
+
   // Helper to determine header text
   const getHeaderText = () => {
+    if (showEmergency) return 'Emergency Contact';
     if (page === 0) return 'Details';
     return `Details - ${page + 1}`;
   };
@@ -298,34 +401,94 @@ function StudentDetails({ student }) {
           <div className="flex items-center gap-2">
             <div className="relative">
               <button
-                id="nav-left-details-button"
-                className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
-                  page === 0 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
+                id="emergency-contact-button"
+                className={`text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors ${
+                  showEmergency
+                    ? 'bg-red-400 hover:bg-red-500'
+                    : 'bg-gray-500 hover:bg-red-400'
                 }`}
-                aria-label="Previous"
-                title="Previous"
+                aria-label="Emergency Contact"
+                title="Emergency Contact"
                 type="button"
-                onClick={handlePrev}
-                disabled={page === 0}
+                aria-pressed={showEmergency}
+                onClick={toggleEmergency}
               >
-                <ChevronLeft className="h-4 w-4" />
+                <Phone className="h-4 w-4" />
               </button>
             </div>
-            <div className="relative">
-              <button
-                id="nav-right-details-button"
-                className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
-                  page === totalPages - 1 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
-                }`}
-                aria-label="Next"
-                title="Next"
-                type="button"
-                onClick={handleNext}
-                disabled={page === totalPages - 1}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+            {showEmergency && (
+              <>
+                <div className="relative">
+                  <button
+                    id="add-emergency-button"
+                    className="bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-500"
+                    aria-label="Add Emergency Number"
+                    title="Add Emergency Number"
+                    type="button"
+                    onClick={handleAddEmergency}
+                    disabled={emergencyEditMode}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    id="edit-emergency-button"
+                    className={`text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      emergencyEditMode
+                        ? 'bg-green-500 hover:bg-green-600'
+                        : 'bg-gray-500 hover:bg-blue-400'
+                    }`}
+                    aria-label={emergencyEditMode ? 'Save emergency contacts' : 'Edit emergency contacts'}
+                    title={emergencyEditMode ? 'Save & close' : 'Edit emergency contacts'}
+                    type="button"
+                    aria-pressed={emergencyEditMode}
+                    onClick={handleToggleEmergencyEdit}
+                    disabled={
+                      savingEmergencyEdit ||
+                      savingEmergency || // don't snapshot a stale list while an add is persisting
+                      (!emergencyEditMode && emergencyContacts.length === 0)
+                    }
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                </div>
+              </>
+            )}
+            {!showEmergency && (
+              <>
+                <div className="relative">
+                  <button
+                    id="nav-left-details-button"
+                    className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
+                      page === 0 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
+                    }`}
+                    aria-label="Previous"
+                    title="Previous"
+                    type="button"
+                    onClick={handlePrev}
+                    disabled={page === 0}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="relative">
+                  <button
+                    id="nav-right-details-button"
+                    className={`bg-gray-500 text-white w-8 h-8 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-600 transition-opacity ${
+                      page === totalPages - 1 ? 'opacity-50 cursor-not-allowed' : 'opacity-100'
+                    }`}
+                    aria-label="Next"
+                    title="Next"
+                    type="button"
+                    onClick={handleNext}
+                    disabled={page === totalPages - 1}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -340,9 +503,84 @@ function StudentDetails({ student }) {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          
+
+          {/* EMERGENCY CONTACT: Emergency Numbers saved */}
+          {showEmergency && (
+            <>
+              {emergencyEditMode ? (
+                <>
+                  {emergencyEditError && (
+                    <div
+                      role="alert"
+                      style={{
+                        textAlign: 'center',
+                        color: '#b91c1c',
+                        background: '#fee2e2',
+                        borderRadius: '0.5rem',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        padding: '0.5rem'
+                      }}
+                    >
+                      {emergencyEditError}
+                    </div>
+                  )}
+                  {emergencyDraft.length === 0 ? (
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        color: '#9ca3af',
+                        fontSize: 14,
+                        padding: '1.5rem 0.5rem'
+                      }}
+                    >
+                      All contacts removed.
+                      <br />
+                      Tap the pencil again to save.
+                    </div>
+                  ) : (
+                    emergencyDraft.map((contact) => (
+                      <EmergencyContactCard
+                        key={contact.id}
+                        contact={contact}
+                        editable
+                        onChange={handleEditEmergencyContact}
+                        onRemove={handleRemoveEmergencyContact}
+                        highlightInvalid={showEmergencyValidation}
+                      />
+                    ))
+                  )}
+                </>
+              ) : emergencyContacts.length === 0 && !savingEmergency ? (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    color: '#9ca3af',
+                    fontSize: 14,
+                    padding: '1.5rem 0.5rem'
+                  }}
+                >
+                  No emergency contacts saved.
+                  <br />
+                  Tap the <strong>+</strong> button to add one.
+                </div>
+              ) : (
+                <>
+                  {emergencyContacts.map((contact) => (
+                    <EmergencyContactCard
+                      key={contact.id}
+                      contact={contact}
+                      onCall={handleCallEmergencyContact}
+                    />
+                  ))}
+                  {savingEmergency && <EmergencyContactSkeleton />}
+                </>
+              )}
+            </>
+          )}
+
           {/* PAGE 1: Contact Information */}
-          {page === 0 && (
+          {!showEmergency && page === 0 && (
             <>
               <CopyField
                 label="Student Number"
@@ -354,13 +592,13 @@ function StudentDetails({ student }) {
                 label="Primary Phone"
                 value={filterPhone(student.Phone)}
                 id="copy-primary-phone"
-                iconSrc={callIcon}
+                Icon={Phone}
               />
               <CopyField
                 label="Other Phone"
                 value={filterPhone(student.OtherPhone)}
                 id="copy-other-phone"
-                iconSrc={callIcon}
+                Icon={Phone}
               />
               <CopyField
                 label="Student Email"
@@ -384,7 +622,7 @@ function StudentDetails({ student }) {
           )}
 
           {/* PAGE 2: Academic Information */}
-          {page === 1 && (
+          {!showEmergency && page === 1 && (
             <>
               <CopyField
                 label="System Student ID"
@@ -428,7 +666,7 @@ function StudentDetails({ student }) {
           )}
 
           {/* PAGE 3: Status Information */}
-          {page === 2 && (
+          {!showEmergency && page === 2 && (
             <>
               <CopyField
                 label="Last Login"
@@ -459,6 +697,12 @@ function StudentDetails({ student }) {
 
         </div>
       </div>
+
+      <AddEmergencyContactModal
+        isOpen={showAddEmergencyModal}
+        onClose={() => setShowAddEmergencyModal(false)}
+        onAdd={handleAddEmergencyContact}
+      />
     </>
   );
 }

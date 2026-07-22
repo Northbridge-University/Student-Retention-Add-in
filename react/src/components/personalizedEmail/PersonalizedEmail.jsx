@@ -2,19 +2,22 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import PillInput from './components/PillInput';
-import { EMAIL_TEMPLATES_KEY, CUSTOM_PARAMS_KEY, LAST_EMAIL_SENT_KEY, standardParameters, specialParameters, QUILL_EDITOR_CONFIG, PARAMETER_BUTTON_STYLES, COLUMN_MAPPINGS } from './utils/constants';
-import { findColumnIndex, normalizeHeader, getTodaysLdaSheetName, formatLastSentStamp, getNameParts, isValidEmail, isValidHttpUrl, evaluateMapping, renderTemplate, renderCCTemplate, generateMissingAssignmentsList, buildMissingAssignmentsCache } from './utils/helpers';
+import { EMAIL_TEMPLATES_KEY, CUSTOM_PARAMS_KEY, EMAIL_SIGNATURES_KEY, LAST_EMAIL_SENT_KEY, standardParameters, specialParameters, QUILL_EDITOR_CONFIG, PARAMETER_BUTTON_STYLES, COLUMN_MAPPINGS } from './utils/constants';
+import { findColumnIndex, normalizeHeader, getTodaysLdaSheetName, formatLastSentStamp, getNameParts, isValidEmail, isValidHttpUrl, evaluateMapping, renderTemplate, renderCCTemplate, findSignature, generateMissingAssignmentsList, buildMissingAssignmentsCache } from './utils/helpers';
 import { generatePdfReceipt } from './utils/receiptGenerator';
+import { compressDataUriImage, dataUriByteLength, formatBytes, IMAGE_COMPRESS_THRESHOLD_BYTES } from './utils/imageCompression';
 import { downloadMailMergeTemplate, extractFieldNames } from './utils/docxGenerator';
 import { downloadRecipientsXlsx } from './utils/recipientsGenerator';
 import DownloadModal from './modals/DownloadModal';
 import ExampleModal from './modals/ExampleModal';
 import TemplatesModal from './modals/TemplatesModal';
 import CustomParamModal from './modals/CustomParamModal';
+import SignatureModal from './modals/SignatureModal';
 import RecipientModal from './modals/RecipientModal';
 import ConfirmSendModal from './modals/ConfirmSendModal';
 import SuccessModal from './modals/SuccessModal';
 import { getWorkbookSettings } from '../utility/getSettings';
+import { getWorkbookUsers } from '../../services/workbookUsers';
 import { MASTER_LIST_SHEET, HISTORY_SHEET } from '../../../../shared/constants.js';
 
 export default function PersonalizedEmail({ user, onReady }) {
@@ -37,6 +40,9 @@ export default function PersonalizedEmail({ user, onReady }) {
     const [studentDataCache, setStudentDataCache] = useState([]);
     const [cachedSpecialParams, setCachedSpecialParams] = useState([]);
     const [customParameters, setCustomParameters] = useState([]);
+    const [signatures, setSignatures] = useState([]);
+    // Email suggestions for the From/CC fields, sourced from registered workbook users.
+    const [addressSuggestions, setAddressSuggestions] = useState([]);
     const [recipientSelection, setRecipientSelection] = useState({
         type: 'lda',
         customSheetName: '',
@@ -57,6 +63,13 @@ export default function PersonalizedEmail({ user, onReady }) {
     const [showSendContextMenu, setShowSendContextMenu] = useState(false);
     const [showSendTooltip, setShowSendTooltip] = useState(false);
     const quillRef = useRef(null);
+    const [imageNotice, setImageNotice] = useState('');
+    const imageNoticeTimerRef = useRef(null);
+    const compressImagesTimerRef = useRef(null);
+    const isCompressingImagesRef = useRef(false);
+    // Tracks data-URIs we've already tried (and failed) to shrink, so a stubborn
+    // image can't trigger an endless compress loop.
+    const failedImagesRef = useRef(new Set());
     const recipientButtonRef = useRef(null);
     const sendButtonRef = useRef(null);
     const tooltipRef = useRef(null);
@@ -65,6 +78,7 @@ export default function PersonalizedEmail({ user, onReady }) {
     const [showExampleModal, setShowExampleModal] = useState(false);
     const [showTemplatesModal, setShowTemplatesModal] = useState(false);
     const [showCustomParamModal, setShowCustomParamModal] = useState(false);
+    const [showSignatureModal, setShowSignatureModal] = useState(false);
     const [showRecipientModal, setShowRecipientModal] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -93,6 +107,7 @@ export default function PersonalizedEmail({ user, onReady }) {
             await Promise.all([
                 checkConnection(),
                 loadCustomParameters(),
+                loadSignatures(),
                 loadTemplates(),
                 loadLastSentInfo()
             ]);
@@ -113,6 +128,31 @@ export default function PersonalizedEmail({ user, onReady }) {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [showSendContextMenu]);
+
+    // Clear pending image-compression timers on unmount.
+    useEffect(() => () => {
+        if (imageNoticeTimerRef.current) clearTimeout(imageNoticeTimerRef.current);
+        if (compressImagesTimerRef.current) clearTimeout(compressImagesTimerRef.current);
+    }, []);
+
+    // Load registered workbook users once for From/CC email autocomplete.
+    useEffect(() => {
+        try {
+            const seen = new Set();
+            const suggestions = [];
+            (getWorkbookUsers() || []).forEach(u => {
+                const email = (u.email || '').trim();
+                if (!email) return;
+                const key = email.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                suggestions.push({ name: (u.name || '').trim(), email });
+            });
+            setAddressSuggestions(suggestions);
+        } catch (error) {
+            console.error('Error loading workbook users for autocomplete:', error);
+        }
+    }, []);
 
     // Setup automatic parameter highlighting
     useEffect(() => {
@@ -271,6 +311,28 @@ export default function PersonalizedEmail({ user, onReady }) {
     const loadCustomParameters = async () => {
         const params = await getCustomParameters();
         setCustomParameters(params);
+    };
+
+    const loadSignatures = async () => {
+        try {
+            const loaded = await Excel.run(async (context) => {
+                const setting = context.workbook.settings.getItemOrNullObject(EMAIL_SIGNATURES_KEY);
+                setting.load("value");
+                await context.sync();
+                return setting.value ? JSON.parse(setting.value) : [];
+            });
+            setSignatures(Array.isArray(loaded) ? loaded : []);
+        } catch (error) {
+            console.error('Error loading signatures:', error);
+        }
+    };
+
+    const saveSignatures = async (newSignatures) => {
+        await Excel.run(async (context) => {
+            context.workbook.settings.add(EMAIL_SIGNATURES_KEY, JSON.stringify(newSignatures));
+            await context.sync();
+        });
+        setSignatures(newSignatures);
     };
 
     const loadTemplates = async () => {
@@ -764,7 +826,12 @@ export default function PersonalizedEmail({ user, onReady }) {
     };
 
     const handleOpenConfirmModal = async () => {
-        await ensureStudentDataLoaded();
+        const data = await ensureStudentDataLoaded();
+        const missing = getMissingSignatureFroms(data);
+        if (missing.length > 0) {
+            setStatus(`No signature set for: ${missing.join(', ')}. Add one with the pencil icon next to "Special Parameters" before sending.`);
+            return;
+        }
         setShowConfirmModal(true);
     };
 
@@ -875,6 +942,108 @@ export default function PersonalizedEmail({ user, onReady }) {
         }
     };
 
+    // --- Image compression -------------------------------------------------
+    // Pasted images embed as large base64 data-URIs. Because the body is copied
+    // into every recipient's payload entry, an oversized image multiplies fast
+    // and can overflow JSON.stringify (RangeError: Invalid string length). We
+    // downscale/re-encode anything over the threshold right after it lands in
+    // the editor, and surface a notice so the user knows it happened.
+
+    const showImageNotice = (message) => {
+        setImageNotice(message);
+        if (imageNoticeTimerRef.current) clearTimeout(imageNoticeTimerRef.current);
+        imageNoticeTimerRef.current = setTimeout(() => setImageNotice(''), 6000);
+    };
+
+    // Returns the document index + src of every image embed in the editor.
+    const getImageEmbeds = (editor) => {
+        const embeds = [];
+        let index = 0;
+        const delta = editor.getContents();
+        (delta.ops || []).forEach(op => {
+            if (op.insert && typeof op.insert === 'object' && typeof op.insert.image === 'string') {
+                embeds.push({ index, src: op.insert.image });
+                index += 1;
+            } else if (typeof op.insert === 'string') {
+                index += op.insert.length;
+            } else {
+                index += 1;
+            }
+        });
+        return embeds;
+    };
+
+    const findOversizedImage = (editor) => getImageEmbeds(editor).find(e =>
+        e.src.startsWith('data:image') &&
+        !failedImagesRef.current.has(e.src) &&
+        dataUriByteLength(e.src) > IMAGE_COMPRESS_THRESHOLD_BYTES
+    );
+
+    const compressOversizedImages = async () => {
+        const editor = quillRef.current?.getEditor?.();
+        if (!editor || isCompressingImagesRef.current) return;
+        if (!findOversizedImage(editor)) return;
+
+        isCompressingImagesRef.current = true;
+        let changed = false;
+        try {
+            // Re-scan each pass so images added mid-compression are still caught;
+            // the guard counter is just a safety stop against pathological loops.
+            for (let guard = 0; guard < 50; guard++) {
+                const target = findOversizedImage(editor);
+                if (!target) break;
+
+                const originalBytes = dataUriByteLength(target.src);
+                showImageNotice(`Large image detected (${formatBytes(originalBytes)}) — compressing…`);
+
+                let newSrc = null;
+                try {
+                    newSrc = await compressDataUriImage(target.src);
+                } catch (error) {
+                    console.error('Image compression failed:', error);
+                    newSrc = null;
+                }
+
+                // Re-locate the embed: the user may have edited during the await.
+                const current = getImageEmbeds(editor).find(e => e.src === target.src);
+                const newBytes = newSrc ? dataUriByteLength(newSrc) : Infinity;
+
+                if (newSrc && current && newBytes < originalBytes) {
+                    editor.deleteText(current.index, 1, 'silent');
+                    editor.insertEmbed(current.index, 'image', newSrc, 'silent');
+                    changed = true;
+                    if (newBytes > IMAGE_COMPRESS_THRESHOLD_BYTES) {
+                        // Still over the limit (rare) — keep it but don't reprocess.
+                        failedImagesRef.current.add(newSrc);
+                        showImageNotice(`Image compressed to ${formatBytes(newBytes)} (still large — consider a smaller image).`);
+                    } else {
+                        showImageNotice(`Large image compressed: ${formatBytes(originalBytes)} → ${formatBytes(newBytes)}.`);
+                    }
+                } else {
+                    // Couldn't load/encode, or no size gain — give up on this one
+                    // so the loop can't spin on it.
+                    failedImagesRef.current.add(target.src);
+                    showImageNotice(`Couldn't compress an image (${formatBytes(originalBytes)}). It may be too large to send.`);
+                }
+            }
+
+            if (changed) {
+                // Our edits were 'silent', so push the new HTML back into React state.
+                setBody(editor.root.innerHTML);
+            }
+        } finally {
+            isCompressingImagesRef.current = false;
+        }
+    };
+
+    // Wraps the Quill onChange: keep React state in sync, then (debounced) shrink
+    // any oversized pasted/dropped images.
+    const handleBodyChange = (value) => {
+        setBody(value);
+        if (compressImagesTimerRef.current) clearTimeout(compressImagesTimerRef.current);
+        compressImagesTimerRef.current = setTimeout(() => { compressOversizedImages(); }, 250);
+    };
+
     const stripParameterBackgrounds = (html) => {
         // Create a temporary div to parse HTML
         const tempDiv = document.createElement('div');
@@ -906,18 +1075,46 @@ export default function PersonalizedEmail({ user, onReady }) {
         return tempDiv.innerHTML;
     };
 
-    const generatePayload = () => {
+    // Reads the body straight from the editor so callers always get the latest
+    // content — including image compression done with 'silent' edits that React
+    // state hasn't caught up to yet.
+    const getCurrentBodyHtml = () => quillRef.current?.getEditor?.()?.root.innerHTML ?? body;
+
+    // The {Signature} special parameter resolves per-email from the rendered
+    // From address, so it can't be precomputed in the student data cache.
+    const getMissingSignatureFroms = (students) => {
+        if (!isParameterUsedInTemplate('Signature')) return [];
+        const fromTemplate = fromPills[0] || '';
+        const data = (students && students.length) ? students : studentDataCache;
+        const froms = new Set();
+        if (data && data.length) {
+            data.forEach(student => {
+                const from = renderTemplate(fromTemplate, student);
+                if (from && from.trim()) froms.add(from.trim());
+            });
+        } else if (fromTemplate.trim()) {
+            froms.add(fromTemplate.trim());
+        }
+        return [...froms].filter(from => !findSignature(signatures, from));
+    };
+
+    const generatePayload = (bodyHtml = body) => {
         const fromTemplate = fromPills[0] || '';
         // Strip parameter backgrounds from body before rendering
-        const cleanBodyHtml = stripParameterBackgrounds(body);
+        const cleanBodyHtml = stripParameterBackgrounds(bodyHtml);
 
-        const emails = studentDataCache.map(student => ({
-            from: renderTemplate(fromTemplate, student),
-            to: student.StudentEmail || '',
-            cc: renderCCTemplate(ccPills, student),
-            subject: renderTemplate(subject, student),
-            body: renderTemplate(cleanBodyHtml, student)
-        })).filter(email => email.to && email.from);
+        const emails = studentDataCache.map(student => {
+            const from = renderTemplate(fromTemplate, student);
+            // Inject the From-specific signature so {Signature} renders correctly.
+            const studentWithSignature = { ...student, Signature: findSignature(signatures, from) };
+            return {
+                from,
+                to: student.StudentEmail || '',
+                cc: renderCCTemplate(ccPills, studentWithSignature),
+                subject: renderTemplate(subject, studentWithSignature),
+                body: renderTemplate(cleanBodyHtml, studentWithSignature)
+            };
+        }).filter(email => email.to && email.from);
 
         // Calculate sender breakdown
         const senderCounts = emails.reduce((acc, email) => {
@@ -944,35 +1141,47 @@ export default function PersonalizedEmail({ user, onReady }) {
         setShowConfirmModal(false);
         setStatus(`Sending ${studentDataCache.length} emails...`);
 
-        const payload = generatePayload();
+        // Shrink any oversized images before building the payload, in case the
+        // user pasted one and hit Send before the debounced compression ran.
+        await compressOversizedImages();
+        const currentBody = getCurrentBodyHtml();
+        const payload = generatePayload(currentBody);
 
         if (payload.emails.length === 0) {
             setStatus('No students with valid "To" and "From" email addresses found.');
             return;
         }
 
-        // Generate base64 PDF receipt to include in payload
-        const initiator = { name: user, email: userEmail };
-        const receiptBase64 = generatePdfReceipt(
-            payload.emails,
-            body,
-            initiator,
-            true // returnBase64
-        );
+        const missingSignatures = getMissingSignatureFroms(studentDataCache);
+        if (missingSignatures.length > 0) {
+            setStatus(`No signature set for: ${missingSignatures.join(', ')}. Add one with the pencil icon next to "Special Parameters" before sending.`);
+            return;
+        }
 
-        // Add receipt to payload
-        const payloadWithReceipt = {
-            ...payload,
-            receipt: receiptBase64 || ''
-        };
+        // Optionally include a base64 PDF receipt in the payload (off by default;
+        // controlled by the "Include Receipts" toggle in the Power Automate config)
+        let payloadToSend = payload;
+        if (powerAutomateConnection?.includeReceipt === true) {
+            const initiator = { name: user, email: userEmail };
+            const receiptBase64 = await generatePdfReceipt(
+                payload.emails,
+                currentBody,
+                initiator,
+                true // returnBase64
+            );
+            payloadToSend = {
+                ...payload,
+                receipt: receiptBase64 || ''
+            };
+        }
 
-        setLastSentPayload(payloadWithReceipt);
+        setLastSentPayload(payloadToSend);
 
         try {
             const response = await fetch(powerAutomateConnection.url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payloadWithReceipt)
+                body: JSON.stringify(payloadToSend)
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             await recordLastSent(payload.emails.length);
@@ -1041,6 +1250,39 @@ export default function PersonalizedEmail({ user, onReady }) {
         }
     };
 
+    const handlePreviewReceipt = async () => {
+        setShowSendContextMenu(false);
+
+        // Need at least From, Subject, and Body for a meaningful receipt.
+        const from = fromPills[0] || '';
+        if (!from.trim() || !subject.trim() || !body.trim()) {
+            setStatus('Please fill in From, Subject, and Body to preview a receipt.');
+            return;
+        }
+
+        setStatus('Generating receipt...');
+        try {
+            await ensureStudentDataLoaded();
+            await compressOversizedImages();
+            const currentBody = getCurrentBodyHtml();
+            const payload = generatePayload(currentBody);
+
+            if (payload.emails.length === 0) {
+                setStatus('No students with valid "To" and "From" email addresses found.');
+                return;
+            }
+
+            // returnBase64 omitted → generatePdfReceipt saves (downloads) the PDF.
+            const initiator = { name: user, email: userEmail };
+            await generatePdfReceipt(payload.emails, currentBody, initiator);
+            setStatus('Receipt downloaded.');
+            setTimeout(() => setStatus(''), 3000);
+        } catch (error) {
+            setStatus(`Failed to generate receipt: ${error.message}`);
+            console.error('Error generating receipt preview:', error);
+        }
+    };
+
     const handleSendTestEmail = async () => {
         setShowSendContextMenu(false);
 
@@ -1059,6 +1301,10 @@ export default function PersonalizedEmail({ user, onReady }) {
         // Ensure student data is loaded
         await ensureStudentDataLoaded();
 
+        // Shrink any oversized images before building the payload.
+        await compressOversizedImages();
+        const currentBody = getCurrentBodyHtml();
+
         // Pick a random student for parameter replacement, or use a placeholder if no students
         let testStudent;
         if (studentDataCache.length > 0) {
@@ -1076,8 +1322,16 @@ export default function PersonalizedEmail({ user, onReady }) {
 
         // Generate single test email payload with user's email as recipient
         const fromTemplate = fromPills[0] || '';
-        const cleanBodyHtml = stripParameterBackgrounds(body);
+        const cleanBodyHtml = stripParameterBackgrounds(currentBody);
         const testFromEmail = renderTemplate(fromTemplate, testStudent);
+
+        if (isParameterUsedInTemplate('Signature') && !findSignature(signatures, testFromEmail)) {
+            setStatus(`No signature set for ${testFromEmail || 'the From address'}. Add one with the pencil icon next to "Special Parameters" before sending.`);
+            return;
+        }
+
+        // Inject the From-specific signature so {Signature} renders in the test.
+        const testStudentWithSignature = { ...testStudent, Signature: findSignature(signatures, testFromEmail) };
 
         const testPayload = {
             byName: user || '',
@@ -1088,8 +1342,8 @@ export default function PersonalizedEmail({ user, onReady }) {
                 from: testFromEmail,
                 to: userEmail, // Always send to the logged-in user
                 cc: '', // Don't CC anyone on test emails
-                subject: `[TEST] ${renderTemplate(subject, testStudent)}`,
-                body: renderTemplate(cleanBodyHtml, testStudent)
+                subject: `[TEST] ${renderTemplate(subject, testStudentWithSignature)}`,
+                body: renderTemplate(cleanBodyHtml, testStudentWithSignature)
             }]
         };
 
@@ -1098,23 +1352,27 @@ export default function PersonalizedEmail({ user, onReady }) {
 
         try {
             if (mode === 'powerautomate') {
-                const initiator = { name: user, email: userEmail };
-                const receiptBase64 = generatePdfReceipt(
-                    testPayload.emails,
-                    body,
-                    initiator,
-                    true // returnBase64
-                );
-
-                const testPayloadWithReceipt = {
-                    ...testPayload,
-                    receipt: receiptBase64 || ''
-                };
+                // Optionally include a base64 PDF receipt in the payload (off by default;
+                // controlled by the "Include Receipts" toggle in the Power Automate config)
+                let testPayloadToSend = testPayload;
+                if (powerAutomateConnection?.includeReceipt === true) {
+                    const initiator = { name: user, email: userEmail };
+                    const receiptBase64 = await generatePdfReceipt(
+                        testPayload.emails,
+                        currentBody,
+                        initiator,
+                        true // returnBase64
+                    );
+                    testPayloadToSend = {
+                        ...testPayload,
+                        receipt: receiptBase64 || ''
+                    };
+                }
 
                 const response = await fetch(powerAutomateConnection.url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(testPayloadWithReceipt)
+                    body: JSON.stringify(testPayloadToSend)
                 });
 
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -1242,6 +1500,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                         readOnly={mode === 'individual'}
                         noWrap={true}
                         getPillColor={getParameterColor}
+                        suggestions={addressSuggestions}
                     />
                 </div>
 
@@ -1282,6 +1541,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                             onFocus={() => setLastFocusedInput('cc')}
                             noWrap={true}
                             getPillColor={getParameterColor}
+                            suggestions={addressSuggestions}
                         />
                     </div>
                 )}
@@ -1309,12 +1569,20 @@ export default function PersonalizedEmail({ user, onReady }) {
                         ref={quillRef}
                         theme="snow"
                         value={body}
-                        onChange={setBody}
+                        onChange={handleBodyChange}
                         onFocus={() => setLastFocusedInput('quill')}
                         modules={QUILL_EDITOR_CONFIG.modules}
                         className="mt-1 bg-white"
                         style={{ height: '192px', marginBottom: '48px' }}
                     />
+                    {imageNotice && (
+                        <div className="mt-1 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            <svg className="h-4 w-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>{imageNotice}</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Parameters — collapsed by default so users with saved templates have more space */}
@@ -1344,7 +1612,20 @@ export default function PersonalizedEmail({ user, onReady }) {
 
                             {specialParameters.length > 0 && (
                                 <div className="mt-3">
-                                    <label className="block text-xs font-medium text-gray-600 mb-2">Special Parameters</label>
+                                    <div className="flex items-center gap-1 mb-2">
+                                        <label className="text-xs font-medium text-gray-600">Special Parameters</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowSignatureModal(true)}
+                                            aria-label="Manage signatures"
+                                            title="Manage signatures for the {Signature} parameter"
+                                            className="p-0.5 text-gray-400 hover:text-blue-600"
+                                        >
+                                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        </button>
+                                    </div>
                                     <div className="flex flex-wrap gap-2">
                                         {specialParameters.map(param => renderParameterButton(param))}
                                     </div>
@@ -1434,12 +1715,18 @@ export default function PersonalizedEmail({ user, onReady }) {
                         )}
                         {/* Context Menu for Send Button */}
                         {showSendContextMenu && (
-                            <div className="absolute bottom-full left-0 mb-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                            <div className="absolute bottom-full left-0 mb-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
                                 <button
                                     onClick={handleSendTestEmail}
-                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
                                 >
                                     Send Test Email to myself
+                                </button>
+                                <button
+                                    onClick={handlePreviewReceipt}
+                                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                                >
+                                    Preview Receipt
                                 </button>
                             </div>
                         )}
@@ -1474,6 +1761,7 @@ export default function PersonalizedEmail({ user, onReady }) {
                 ccRecipients={ccPills}
                 subjectTemplate={subject}
                 bodyTemplate={body}
+                signatures={signatures}
             />
 
             <TemplatesModal
@@ -1500,6 +1788,15 @@ export default function PersonalizedEmail({ user, onReady }) {
                 onClose={() => setShowCustomParamModal(false)}
                 customParameters={customParameters}
                 onSave={saveCustomParameters}
+            />
+
+            <SignatureModal
+                isOpen={showSignatureModal}
+                onClose={() => setShowSignatureModal(false)}
+                signatures={signatures}
+                onSave={saveSignatures}
+                currentFrom={fromPills[0] || ''}
+                suggestions={addressSuggestions}
             />
 
             <RecipientModal

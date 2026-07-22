@@ -11,7 +11,8 @@
 import { getWorkbookSettings } from '../utility/getSettings';
 import { defaultColumns } from '../settings/DefaultSettings';
 import { MASTER_LIST_SHEET, HISTORY_SHEET, BATCH_SIZE } from '../../../../shared/constants.js';
-import { STUDENT_ID_ALIASES, STUDENT_NUMBER_ALIASES } from '../../../../shared/columnAliases.js';
+import { STUDENT_ID_ALIASES, STUDENT_NUMBER_ALIASES, LAST_LDA_ALIASES } from '../../../../shared/columnAliases.js';
+import { sanitizeRiskIndexSettings, buildDailySnapshot, mergeSnapshot, countRiskEpisodes, lookupRiskCount, loadLdaHistory, saveLdaHistory, todayKey } from './riskIndex.js';
 
 const SHEET_NAMES = {
     MASTER_LIST: MASTER_LIST_SHEET,
@@ -40,6 +41,7 @@ const FIXED_COLUMN_WIDTHS = {
     grade: 45.75,              // 61px (Last Course Grade — settings name is "Grade")
     lastcoursegrade: 45.75,    // 61px (when shown under its raw master header)
     nextassignmentdue: 92.25,  // 123px
+    ri: 30,                    // 40px (Risk Index)
 };
 const WRAP_COLUMN_NAMES = new Set(['outreach']);
 const normalizeColName = (name) => String(name || '').toLowerCase().replace(/\s+/g, '');
@@ -306,7 +308,8 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
             dncColor: userOverrides.dncColor ?? '#f2bdbd',
             sheetNameMode: userOverrides.sheetNameMode ?? 'date',
             columns: workbookSettings.columns,
-            advisorAssignment: userOverrides.advisorAssignment ?? { enabled: false, advisors: [] }
+            advisorAssignment: userOverrides.advisorAssignment ?? { enabled: false, advisors: [] },
+            riskIndex: sanitizeRiskIndexSettings(userOverrides.riskIndex)
         };
 
         await Excel.run(async (context) => {
@@ -518,6 +521,32 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
             }
 
             if (daysOutIdx === -1) throw new Error("Could not find 'Days Out' column in Master List. Check Settings.");
+
+            // --- Risk Index: daily LDA/Days Out snapshot + episode counts ---
+            // One snapshot per calendar day for the whole Master List (a same-day
+            // re-run overwrites that day's entry), stored under the LDAHistory
+            // document setting. The counts feed the RI output column and the
+            // student view badge.
+            let riskIndexMap = new Map();
+            const riskEnabled = settings.riskIndex.enabled && studentIdIdx !== -1;
+            if (riskEnabled) {
+                const ldaColIdx = findColIdxByAliases(LAST_LDA_ALIASES);
+                const snapshot = buildDailySnapshot(masterValues, { idIdx: studentIdIdx, ldaIdx: ldaColIdx, daysOutIdx });
+                const ldaHistory = mergeSnapshot(loadLdaHistory(), todayKey(), snapshot);
+                saveLdaHistory(ldaHistory);
+                riskIndexMap = countRiskEpisodes(ldaHistory, settings.riskIndex.threshold);
+            }
+            if (riskEnabled && settings.riskIndex.showColumn) {
+                // Place RI right after Days Out; the column is synthetic (no
+                // Master List source), flagged so buildOutputRow fills it.
+                const riColumn = { name: 'RI', riskIndex: true };
+                const daysOutOutIdx = outputColumns.findIndex(c => getColIndex(c.name) === daysOutIdx);
+                if (daysOutOutIdx !== -1) {
+                    outputColumns.splice(daysOutOutIdx + 1, 0, riColumn);
+                } else {
+                    outputColumns.push(riColumn);
+                }
+            }
 
             // Look for "Course Start" column
             let courseStartIdx = getColIndex('Course Start');
@@ -1128,7 +1157,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     }
                     outputColumns.forEach((colConfig, colOutIdx) => {
                         const masterIdx = getColIndex(colConfig.name);
-                        let val = (masterIdx !== -1) ? rowObj.values[masterIdx] : "";
+                        let val = (masterIdx !== -1) ? rowObj.values[masterIdx] : (colConfig.riskIndex ? lookupRiskCount(riskIndexMap, sIds) : "");
                         let form = (masterIdx !== -1) ? rowObj.formulas[masterIdx] : null;
                         if (colConfig.name === 'Gradebook' && form && String(form).startsWith('=HYPERLINK')) {
                             // Keep formula
@@ -1531,7 +1560,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
 
                     outputColumns.forEach((colConfig, colOutIdx) => {
                         const masterIdx = getColIndex(colConfig.name);
-                        let val = (masterIdx !== -1) ? rowObj.values[masterIdx] : "";
+                        let val = (masterIdx !== -1) ? rowObj.values[masterIdx] : (colConfig.riskIndex ? lookupRiskCount(riskIndexMap, sIds) : "");
                         let form = (masterIdx !== -1) ? rowObj.formulas[masterIdx] : null;
 
                         if (colConfig.name === 'Gradebook' && form && String(form).startsWith('=HYPERLINK')) {

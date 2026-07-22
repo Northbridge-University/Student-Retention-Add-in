@@ -5,6 +5,7 @@ export default function PowerAutomateConfigModal({ isOpen, onClose }) {
     const [status, setStatus] = useState('');
     const [currentConnection, setCurrentConnection] = useState(null);
     const [enabled, setEnabled] = useState(true);
+    const [includeReceipt, setIncludeReceipt] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -28,11 +29,13 @@ export default function PowerAutomateConfigModal({ isOpen, onClose }) {
                 if (connection) {
                     setCurrentConnection(connection);
                     setEnabled(connection.enabled !== false);
+                    setIncludeReceipt(connection.includeReceipt === true);
                     setUrl(''); // Don't expose the URL for security
                     setStatus('Connection configured');
                 } else {
                     setCurrentConnection(null);
                     setEnabled(true);
+                    setIncludeReceipt(false);
                     setUrl('');
                     setStatus('No connection configured');
                 }
@@ -86,6 +89,38 @@ export default function PowerAutomateConfigModal({ isOpen, onClose }) {
         }
     };
 
+    const handleToggleIncludeReceipt = async (newIncludeReceipt) => {
+        if (!currentConnection) return;
+        setIncludeReceipt(newIncludeReceipt);
+
+        try {
+            await Excel.run(async (context) => {
+                const settings = context.workbook.settings;
+                const connectionsSetting = settings.getItemOrNullObject("connections");
+                connectionsSetting.load("value");
+                await context.sync();
+
+                const connections = connectionsSetting.value ? JSON.parse(connectionsSetting.value) : [];
+                const updated = connections.map(c =>
+                    (c.type === 'power-automate' && c.name === 'Send Personalized Email')
+                        ? { ...c, includeReceipt: newIncludeReceipt }
+                        : c
+                );
+                settings.add("connections", JSON.stringify(updated));
+                await context.sync();
+
+                setCurrentConnection(prev => prev ? { ...prev, includeReceipt: newIncludeReceipt } : prev);
+                setStatus(newIncludeReceipt
+                    ? 'Receipts will be included in the payload.'
+                    : 'Receipts will not be included in the payload.');
+            });
+        } catch (error) {
+            console.error('Error toggling include receipt:', error);
+            setStatus('Error saving toggle');
+            setIncludeReceipt(!newIncludeReceipt);
+        }
+    };
+
     const handleSave = async () => {
         // If no new URL entered but connection exists, just close (no changes)
         if (!url.trim() && currentConnection) {
@@ -119,6 +154,7 @@ export default function PowerAutomateConfigModal({ isOpen, onClose }) {
                     type: 'power-automate',
                     url: url,
                     enabled: enabled,
+                    includeReceipt: includeReceipt,
                     actions: [],
                     history: []
                 };
@@ -211,6 +247,31 @@ export default function PowerAutomateConfigModal({ isOpen, onClose }) {
                                             type="checkbox"
                                             checked={enabled}
                                             onChange={(e) => handleToggleEnabled(e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                    </div>
+                                </label>
+                            </div>
+                        )}
+
+                        {currentConnection && (
+                            <div className="mb-4 p-3 rounded-md bg-gray-50 border border-gray-200">
+                                <label htmlFor="pa-receipt-toggle" className="flex items-center justify-between cursor-pointer">
+                                    <span className="text-sm">
+                                        <span className="font-medium text-gray-700 block">Include Receipts</span>
+                                        <span className="text-xs text-gray-500">
+                                            {includeReceipt
+                                                ? 'A PDF receipt is attached to the payload sent to Power Automate.'
+                                                : 'No receipt is included in the payload.'}
+                                        </span>
+                                    </span>
+                                    <div className="relative inline-flex items-center flex-shrink-0 ml-3">
+                                        <input
+                                            id="pa-receipt-toggle"
+                                            type="checkbox"
+                                            checked={includeReceipt}
+                                            onChange={(e) => handleToggleIncludeReceipt(e.target.checked)}
                                             className="sr-only peer"
                                         />
                                         <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>

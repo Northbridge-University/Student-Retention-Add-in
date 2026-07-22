@@ -336,9 +336,11 @@ function StudentView({ onReady, user }) {
                 const tagString = match && tag ? `${tag}, Outreach` : 'Outreach';
                 // Highlight (or clear) the row from column A through the
                 // Outreach column, skipping the Assigned column so its own
-                // formatting is preserved.
+                // formatting is preserved. On a non-matching edit we only clear
+                // a row that's currently yellow (the Contacted highlight) so we
+                // don't accidentally wipe highlights applied in other colors.
                 const fillColor = match ? 'yellow' : null;
-                setRowSegmentFill(change.rowIndex, change.colIndex, fillColor, [ASSIGNED_ALIASES]);
+                setRowSegmentFill(change.rowIndex, change.colIndex, fillColor, [ASSIGNED_ALIASES], match ? {} : { clearOnlyIfColor: '#FFFF00' });
                 // Auto Outreach handler opts into dedupe: a single advisor edit can
                 // produce repeated change events, and co-editing advisors update the
                 // same cell during the day. Manual comments do NOT pass this flag.

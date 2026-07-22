@@ -115,6 +115,26 @@ export const renderCCTemplate = (recipients, data) => {
     return recipients.map(recipient => renderTemplate(recipient, data)).join(';');
 };
 
+// Normalizes a From value to a comparable key. Lowercases/trims and, when the
+// value is in "Name <email>" form, uses just the email so signatures match
+// regardless of display name.
+export const normalizeEmailKey = (value) => {
+    if (!value) return '';
+    const str = String(value).trim().toLowerCase();
+    const match = str.match(/<([^>]+)>/);
+    return (match ? match[1] : str).trim();
+};
+
+// Looks up the signature HTML assigned to a given From address.
+// `signatures` is an array of { email, signature }. Returns '' if none.
+export const findSignature = (signatures, fromValue) => {
+    if (!Array.isArray(signatures) || signatures.length === 0) return '';
+    const key = normalizeEmailKey(fromValue);
+    if (!key) return '';
+    const match = signatures.find(s => normalizeEmailKey(s.email) === key);
+    return match ? (match.signature || '') : '';
+};
+
 /**
  * Pre-loads the "Missing Assignments" sheet and builds a lookup map
  * of Grade Book URL → HTML assignment list.  Call once before the

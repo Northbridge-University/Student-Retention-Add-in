@@ -13,6 +13,9 @@ import UserInfoDisplay from '../utility/UserInfoDisplay'; // <-- User info from 
 import About from '../about/About'; // <-- ADDED: Import About component for Help tab
 import { HISTORY_SHEET, MASTER_LIST_SHEET } from '../../../../shared/constants.js';
 import { getWorkbookUsers } from '../../services/workbookUsers.js';
+import { loadLdaHistory, historyToCsv } from '../createLDA/riskIndex.js';
+import RiskIndexImportModal from './RiskIndexImportModal'; // <-- ADDED: Risk Index history import modal
+import RiskIndexLeaderboard from './RiskIndexLeaderboard'; // <-- ADDED: ranked at-risk students card
 
 const SUMMARY_BRAND = '#145F82';
 
@@ -231,6 +234,10 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 	// Create Student History sheet state
 	const [creatingHistorySheet, setCreatingHistorySheet] = useState(false);
 
+	// Risk Index: LDA history import modal + download state
+	const [riskImportModalOpen, setRiskImportModalOpen] = useState(false);
+	const [downloadingLdaHistory, setDownloadingLdaHistory] = useState(false);
+
 	// Default headers for a freshly-created Student History sheet. Each name is
 	// a canonical alias from shared/columnAliases.js so the existing add/edit/
 	// delete-comment flows resolve them via canonicalHeaderMap.
@@ -444,6 +451,34 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 		}
 	};
 
+	// Risk Index: download the saved LDA history as CSV
+	const downloadLdaHistory = () => {
+		if (downloadingLdaHistory) return;
+		setDownloadingLdaHistory(true);
+		try {
+			const history = loadLdaHistory();
+			const dayCount = Object.keys((history && history.days) || {}).length;
+			if (dayCount === 0) {
+				alert('No LDA history saved yet. It builds up as LDA sheets are created, or use Import Past Reports.');
+				return;
+			}
+			const blob = new Blob([historyToCsv(history)], { type: 'text/csv;charset=utf-8;' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = 'LDA History.csv';
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		} catch (err) {
+			console.error('Failed to download LDA history:', err);
+			alert(err.message || 'Failed to download LDA history');
+		} finally {
+			setDownloadingLdaHistory(false);
+		}
+	};
+
 	const openArrayModal = async (setting, currentValue, updater) => {
 		// if this is the columns setting, read master list headers first
 		if (setting.id === 'columns') {
@@ -636,6 +671,11 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 			if (setting.type === 'userslist') {
 				return <UsersList key={setting.id} />;
 			}
+			// Custom full-width row: students ranked by Risk Index. Keyed off the
+			// import modal's open state so closing it reloads fresh history.
+			if (setting.type === 'riskleaderboard') {
+				return <RiskIndexLeaderboard key={setting.id} refreshToken={riskImportModalOpen} />;
+			}
 			return (
 				<div key={setting.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box' }}>
 					{/* label area: stays in the left column and truncates if too long */}
@@ -805,38 +845,83 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 							}
 
 							if (setting.type === 'action') {
-								const isDownloading = setting.id === 'downloadHistoryCsv' && downloadingCsv;
-								const isCreating = setting.id === 'createHistorySheet' && creatingHistorySheet;
+								const plusIcon = (
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+										<line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+										<line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+									</svg>
+								);
+								const downloadIcon = (
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+										<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+										<polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+										<line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+									</svg>
+								);
+								const importIcon = (
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+										<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+										<polyline points="7 8 12 3 17 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+										<line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+									</svg>
+								);
+
 								// historyCommentCount is null both before the workbook summary loads and
 								// when the History sheet doesn't exist — either way, there's nothing to
-								// download yet, so disable the button.
+								// download yet, so disable the button. Inverse for Create: greyed out when
+								// the sheet already exists, or while the workbook summary is still
+								// resolving so we don't race a duplicate.
 								const noHistorySheet = setting.id === 'downloadHistoryCsv' && historyCommentCount == null;
-								// Inverse for Create: greyed out when the sheet already exists, or while
-								// the workbook summary is still resolving so we don't race a duplicate.
 								const historySheetExists = setting.id === 'createHistorySheet' && (historyCommentCount != null || summaryLoading);
-								const isDisabled = isDownloading || isCreating || noHistorySheet || historySheetExists;
-								const isCreate = setting.id === 'createHistorySheet';
-								const greyedReason = noHistorySheet
-									? `No "${HISTORY_SHEET}" sheet found — nothing to download`
-									: (historySheetExists && historyCommentCount != null
-										? `"${HISTORY_SHEET}" sheet already exists`
-										: undefined);
+								const actions = {
+									createHistorySheet: {
+										run: createHistorySheet,
+										busy: creatingHistorySheet,
+										icon: plusIcon,
+										idle: 'Create',
+										busyLabel: 'Creating...',
+										greyed: historySheetExists,
+										greyedReason: historyCommentCount != null ? `"${HISTORY_SHEET}" sheet already exists` : undefined,
+									},
+									downloadHistoryCsv: {
+										run: downloadHistoryCsv,
+										busy: downloadingCsv,
+										icon: downloadIcon,
+										idle: 'Download',
+										busyLabel: 'Downloading...',
+										greyed: noHistorySheet,
+										greyedReason: noHistorySheet ? `No "${HISTORY_SHEET}" sheet found — nothing to download` : undefined,
+									},
+									importLdaHistory: {
+										run: () => setRiskImportModalOpen(true),
+										busy: false,
+										icon: importIcon,
+										idle: 'Import',
+										busyLabel: 'Importing...',
+									},
+									downloadLdaHistory: {
+										run: downloadLdaHistory,
+										busy: downloadingLdaHistory,
+										icon: downloadIcon,
+										idle: 'Download',
+										busyLabel: 'Downloading...',
+									},
+								};
+								const action = actions[setting.id];
+								if (!action) return null;
+								const isDisabled = action.busy || !!action.greyed;
 								return (
 									<button
-										onClick={() => {
-											if (isDisabled) return;
-											if (setting.id === 'downloadHistoryCsv') downloadHistoryCsv();
-											else if (setting.id === 'createHistorySheet') createHistorySheet();
-										}}
+										onClick={() => { if (!isDisabled) action.run(); }}
 										disabled={isDisabled}
-										title={greyedReason}
+										title={action.greyedReason}
 										style={{
 											padding: '6px 10px',
 											borderRadius: 6,
 											background: isDisabled ? '#e5e7eb' : '#f3f4f6',
 											border: '1px solid #e6e7eb',
 											cursor: isDisabled ? 'not-allowed' : 'pointer',
-											color: (noHistorySheet || historySheetExists) ? '#9ca3af' : undefined,
+											color: action.greyed ? '#9ca3af' : undefined,
 											display: 'inline-flex',
 											alignItems: 'center',
 											gap: 6,
@@ -844,23 +929,8 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 										}}
 										aria-label={setting.label}
 									>
-										{isCreate ? (
-											/* plus icon */
-											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-												<line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-												<line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-											</svg>
-										) : (
-											/* download icon */
-											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-												<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-												<polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-												<line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-											</svg>
-										)}
-										{isCreate
-											? (isCreating ? 'Creating...' : 'Create')
-											: (isDownloading ? 'Downloading...' : 'Download')}
+										{action.icon}
+										{action.busy ? action.busyLabel : action.idle}
 									</button>
 								);
 							}
@@ -1182,6 +1252,11 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 					dncColor: workbookSettingsState.dncColor ?? '#f2bdbd',
 				}}
 				onChange={updateWorkbookSetting}
+			/>
+
+			<RiskIndexImportModal
+				isOpen={riskImportModalOpen}
+				onClose={() => setRiskImportModalOpen(false)}
 			/>
 		</div>
 	);

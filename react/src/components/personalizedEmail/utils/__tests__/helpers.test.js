@@ -8,6 +8,8 @@ import {
     evaluateMapping,
     renderTemplate,
     renderCCTemplate,
+    normalizeEmailKey,
+    findSignature,
 } from '../helpers.js';
 
 describe('getTodaysLdaSheetName', () => {
@@ -280,5 +282,46 @@ describe('renderCCTemplate', () => {
         // Single recipient still gets template substitution
         expect(renderCCTemplate(['{name}@x.com'], { name: 'ada' }))
             .toBe('ada@x.com');
+    });
+});
+
+describe('normalizeEmailKey', () => {
+    it('lowercases and trims', () => {
+        expect(normalizeEmailKey('  Advisor@School.EDU ')).toBe('advisor@school.edu');
+    });
+
+    it('extracts the email from "Name <email>" form', () => {
+        expect(normalizeEmailKey('Jane Doe <Jane.Doe@School.edu>')).toBe('jane.doe@school.edu');
+    });
+
+    it('returns empty string for falsy input', () => {
+        expect(normalizeEmailKey('')).toBe('');
+        expect(normalizeEmailKey(null)).toBe('');
+        expect(normalizeEmailKey(undefined)).toBe('');
+    });
+});
+
+describe('findSignature', () => {
+    const signatures = [
+        { email: 'advisor@school.edu', signature: '<p>Best, Advisor</p>' },
+        { email: 'Dean <dean@school.edu>', signature: '<p>Regards, Dean</p>' },
+    ];
+
+    it('matches case-insensitively', () => {
+        expect(findSignature(signatures, 'ADVISOR@school.edu')).toBe('<p>Best, Advisor</p>');
+    });
+
+    it('matches a plain From against a "Name <email>" entry', () => {
+        expect(findSignature(signatures, 'dean@school.edu')).toBe('<p>Regards, Dean</p>');
+    });
+
+    it('returns empty string when no signature is assigned', () => {
+        expect(findSignature(signatures, 'nobody@school.edu')).toBe('');
+    });
+
+    it('handles empty / missing inputs', () => {
+        expect(findSignature([], 'advisor@school.edu')).toBe('');
+        expect(findSignature(null, 'advisor@school.edu')).toBe('');
+        expect(findSignature(signatures, '')).toBe('');
     });
 });

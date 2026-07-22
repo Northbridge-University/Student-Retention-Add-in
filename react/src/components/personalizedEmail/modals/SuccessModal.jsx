@@ -4,10 +4,10 @@ import { generatePdfReceipt } from '../utils/receiptGenerator';
 export default function SuccessModal({ isOpen, onClose, count, payload, bodyTemplate, initiator }) {
     if (!isOpen) return null;
 
-    const handleDownloadReceipt = () => {
+    const handleDownloadReceipt = async () => {
         // payload now has structure { byName, byEmail, emails }, so pass emails array
         const emails = payload?.emails || payload;
-        generatePdfReceipt(emails, bodyTemplate, initiator || {});
+        await generatePdfReceipt(emails, bodyTemplate, initiator || {});
     };
 
     return (
