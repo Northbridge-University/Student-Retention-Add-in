@@ -773,8 +773,8 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
             </span>
           }
           tooltip="Save today's LDA/Days Out snapshot and add the RI column showing how many times each student hit the risk threshold. Configure it in Settings under Risk Index."
-          isOn={settings.riskIndex?.enabled ?? true}
-          onToggle={() => onSettingChange('riskIndex', { ...settings.riskIndex, enabled: !(settings.riskIndex?.enabled ?? true) })}
+          isOn={settings.riskIndex?.enabled ?? false}
+          onToggle={() => onSettingChange('riskIndex', { ...settings.riskIndex, enabled: !(settings.riskIndex?.enabled ?? false) })}
         />
       </div>
     );
@@ -848,7 +848,7 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         const inclusionsOn = [
           settings.includeFailingList,
           settings.includeNextAssignmentDue,
-          settings.riskIndex?.enabled ?? true,
+          settings.riskIndex?.enabled ?? false,
         ].filter(Boolean).length;
         return (
           <button

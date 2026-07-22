@@ -30,7 +30,7 @@ import {
 export const LDA_HISTORY_KEY = 'LDAHistory';
 
 export const DEFAULT_RISK_INDEX_SETTINGS = {
-    enabled: true,
+    enabled: false,
     threshold: 14,
     showColumn: true,
 };

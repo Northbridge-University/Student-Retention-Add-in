@@ -130,9 +130,9 @@ export const defaultWorkbookSettings = [
 		id: 'riskIndexEnabled',
 		label: 'Track Risk Index',
 		type: 'boolean',
-		defaultValue: true,
+		defaultValue: false,
 		section: 'Risk Index',
-		description: 'Save a daily snapshot of every student\'s LDA and Days Out (stored under LDAHistory in workbook settings) each time an LDA sheet is created — once per day.'
+		description: 'Default state of the "Include Risk Index" toggle on the Create LDA page. When on, each LDA sheet creation saves a daily snapshot of every student\'s LDA and Days Out (stored under LDAHistory in workbook settings) — once per day.'
 	},
 	{
 		id: 'riskIndexThreshold',
