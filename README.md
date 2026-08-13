@@ -100,10 +100,10 @@ flows by sideloading the manifest into Excel.
 
 Two environments:
 
-- **Prod — GitHub Pages.** `https://northbridge-university.github.io/Student-Retention-Add-in/`
+- **Prod — GitHub Pages.** `https://Northbridge-University.github.io/Student-Retention-Add-in/`
   Serves the `react/dist/` committed on `main`. Sideload `manifest.xml`.
 - **Staging — `staging` branch via Vercel.**
-  `https://student-retention-kit-git-staging-northbridge-university.vercel.app/`
+  `https://student-retention-kit-git-staging-Northbridge-University.vercel.app/`
   Auto-deployed by Vercel on every push to `staging` (build config in
   `vercel.json`). Sideload `manifest.staging.xml`. Use this for full-deploy
   testing before promoting to prod.
@@ -118,7 +118,7 @@ feature-branch → staging (test on Vercel) → main (prod on GitHub Pages)
 ```
 
 Feature branches pushed to GitHub also get automatic Vercel preview URLs
-(pattern: `student-retention-kit-git-<branch>-northbridge-university.vercel.app`), but those
+(pattern: `student-retention-kit-git-<branch>-Northbridge-University.vercel.app`), but those
 hosts aren't registered in Azure AD by default — for full SSO-enabled testing,
 merge into `staging` and use `manifest.staging.xml`.
 
@@ -147,6 +147,6 @@ Each environment's host needs **two** entries on the Azure AD app registration
 2. A **redirect URI** (`https://<host>/react/dist/index.html`) of type SPA under
    "Authentication"
 
-Currently registered: `northbridge-university.github.io` (prod) and
-`student-retention-kit-git-staging-northbridge-university.vercel.app` (staging). New
+Currently registered: `Northbridge-University.github.io` (prod) and
+`student-retention-kit-git-staging-Northbridge-University.vercel.app` (staging). New
 environments require the same two-entry add.

@@ -7,17 +7,17 @@
   <DisplayName DefaultValue="Student Retention Add-in"/>
   <Description DefaultValue="An add-in for tracking student retention tasks."/>
   
-  <IconUrl DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/icon-32.png"/>
+  <IconUrl DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/icon-32.png"/>
   
   <SupportUrl DefaultValue="https://github.com/Northbridge-University/Student-Retention-Add-in"/>
   <AppDomains>
-    <AppDomain>https://northbridge-university.github.io</AppDomain>
+    <AppDomain>https://Northbridge-University.github.io</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Workbook"/>
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/react/dist/index.html"/>
+    <SourceLocation DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/index.html"/>
     <RequestedWidth>450</RequestedWidth>
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
@@ -168,33 +168,33 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/icon-80.png"/>
-        <bt:Image id="CreateLdaIcon.16x16" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/create-lda-icon.png"/>
-        <bt:Image id="CreateLdaIcon.32x32" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/create-lda-icon.png"/>
-        <bt:Image id="CreateLdaIcon.80x80" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/create-lda-icon.png"/>
-        <bt:Image id="DetailsIcon.16x16" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/details-icon.png"/>
-        <bt:Image id="DetailsIcon.32x32" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/details-icon.png"/>
-        <bt:Image id="DetailsIcon.80x80" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/details-icon.png"/>
-        <bt:Image id="SettingsIcon.16x16" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/settings-icon.png"/>
-        <bt:Image id="SettingsIcon.32x32" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/settings-icon.png"/>
-        <bt:Image id="SettingsIcon.80x80" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/settings-icon.png"/>
-        <bt:Image id="EmailIcon.16x16" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/email-icon.png"/>
-        <bt:Image id="EmailIcon.32x32" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/email-icon.png"/>
-        <bt:Image id="EmailIcon.80x80" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/email-icon.png"/>
-        <bt:Image id="CallIcon.16x16" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/call-icon.png"/>
-        <bt:Image id="CallIcon.32x32" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/call-icon.png"/>
-        <bt:Image id="CallIcon.80x80" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/assets/call-icon.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/icon-80.png"/>
+        <bt:Image id="CreateLdaIcon.16x16" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/create-lda-icon.png"/>
+        <bt:Image id="CreateLdaIcon.32x32" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/create-lda-icon.png"/>
+        <bt:Image id="CreateLdaIcon.80x80" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/create-lda-icon.png"/>
+        <bt:Image id="DetailsIcon.16x16" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/details-icon.png"/>
+        <bt:Image id="DetailsIcon.32x32" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/details-icon.png"/>
+        <bt:Image id="DetailsIcon.80x80" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/details-icon.png"/>
+        <bt:Image id="SettingsIcon.16x16" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/settings-icon.png"/>
+        <bt:Image id="SettingsIcon.32x32" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/settings-icon.png"/>
+        <bt:Image id="SettingsIcon.80x80" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/settings-icon.png"/>
+        <bt:Image id="EmailIcon.16x16" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/email-icon.png"/>
+        <bt:Image id="EmailIcon.32x32" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/email-icon.png"/>
+        <bt:Image id="EmailIcon.80x80" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/email-icon.png"/>
+        <bt:Image id="CallIcon.16x16" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/call-icon.png"/>
+        <bt:Image id="CallIcon.32x32" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/call-icon.png"/>
+        <bt:Image id="CallIcon.80x80" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/assets/call-icon.png"/>
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812"/>
-        <bt:Url id="Commands.Url" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/commands/commands.html"/>
-        <bt:Url id="StudentView.Url" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/react/dist/index.html?page=student-view"/>
-        <bt:Url id="Settings.Url" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/react/dist/index.html?page=settings"/>
-        <bt:Url id="CreateLdaDialog.Url" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/react/dist/index.html?page=create-lda"/>
-        <bt:Url id="WelcomeDialog.Url" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/welcome-dialog.html"/>
-        <bt:Url id="PersonalizedEmail.Url" DefaultValue="https://northbridge-university.github.io/Student-Retention-Add-in/react/dist/index.html?page=personalized-email"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/commands/commands.html"/>
+        <bt:Url id="StudentView.Url" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/index.html?page=student-view"/>
+        <bt:Url id="Settings.Url" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/index.html?page=settings"/>
+        <bt:Url id="CreateLdaDialog.Url" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/index.html?page=create-lda"/>
+        <bt:Url id="WelcomeDialog.Url" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/welcome-dialog.html"/>
+        <bt:Url id="PersonalizedEmail.Url" DefaultValue="https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/index.html?page=personalized-email"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with the Retention Add-in!"/>
@@ -229,11 +229,11 @@
     -->
     <WebApplicationInfo>
       <Id>71f37f39-a330-413a-be61-0baa5ce03ea3</Id>
-      <Resource>api://northbridge-university.github.io/71f37f39-a330-413a-be61-0baa5ce03ea3</Resource>
+      <Resource>api://Northbridge-University.github.io/71f37f39-a330-413a-be61-0baa5ce03ea3</Resource>
       <Scopes>
         <Scope>openid</Scope>
         <Scope>profile</Scope>
-        <Scope>api://northbridge-university.github.io/71f37f39-a330-413a-be61-0baa5ce03ea3/access_as_user</Scope>
+        <Scope>api://Northbridge-University.github.io/71f37f39-a330-413a-be61-0baa5ce03ea3/access_as_user</Scope>
       </Scopes>
     </WebApplicationInfo>
   </VersionOverrides>
