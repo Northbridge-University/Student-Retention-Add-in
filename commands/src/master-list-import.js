@@ -205,7 +205,7 @@ async function importMissingAssignments(studentsWithAssignments) {
  */
 function showMissingMasterListDialog(payload) {
     // Resolve relative to the runtime page (commands.html) so the dialog works
-    // on both prod (northbridge-university.github.io) and staging (Vercel) without needing a
+    // on both prod (Northbridge-University.github.io) and staging (Vercel) without needing a
     // host-specific URL — both AppDomains lists allow same-origin URLs.
     const dialogUrl = new URL('missing-masterlist-dialog.html', window.location.href).href;
 

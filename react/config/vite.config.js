@@ -5,7 +5,7 @@ import path from 'path';
 
 export default defineConfig({
   // FIX: Set the base path to correctly resolve assets when deployed to the 
-  // GitHub Pages subfolder (https://northbridge-university.github.io/Student-Retention-Add-in/react/dist/).
+  // GitHub Pages subfolder (https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/).
   // Updated to include 'dist/' because the production files are served from that subdirectory.
   base: '/Student-Retention-Add-in/react/dist/', 
   plugins: [react()],
