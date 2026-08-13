@@ -9,7 +9,7 @@
   
   <IconUrl DefaultValue="https://student-retention-kit.vercel.app/assets/icon-32.png"/>
   
-  <SupportUrl DefaultValue="https://github.com/vsblanco/Student-Retention-Add-in"/>
+  <SupportUrl DefaultValue="https://github.com/Northbridge-University/Student-Retention-Add-in"/>
   <AppDomains>
     <AppDomain>https://student-retention-kit.vercel.app</AppDomain>
   </AppDomains>
