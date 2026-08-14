@@ -74,7 +74,7 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
 3. Select **"Single-page application"**
 4. Add these redirect URIs:
    ```
-   https://vsblanco.github.io/Student-Retention-Add-in/react/dist/index.html
+   https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/index.html
    https://localhost:3000
    ```
 5. Check these boxes under **Implicit grant and hybrid flows**:
@@ -105,7 +105,7 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
   <!-- WebApplicationInfo MUST be the last child of VersionOverrides -->
   <WebApplicationInfo>
     <Id>YOUR_CLIENT_ID_HERE</Id>
-    <Resource>api://vsblanco.github.io/YOUR_CLIENT_ID_HERE</Resource>
+    <Resource>api://Northbridge-University.github.io/YOUR_CLIENT_ID_HERE</Resource>
     <Scopes>
       <Scope>openid</Scope>
       <Scope>profile</Scope>
@@ -128,7 +128,7 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
 
 1. In your app registration, go to **"Expose an API"**
 2. Click **"+ Add a scope"**
-3. For Application ID URI, use: `api://vsblanco.github.io/YOUR_CLIENT_ID_HERE`
+3. For Application ID URI, use: `api://Northbridge-University.github.io/YOUR_CLIENT_ID_HERE`
 4. Click **Save and continue**
 5. Fill in the scope details:
    - **Scope name**: `access_as_user`
