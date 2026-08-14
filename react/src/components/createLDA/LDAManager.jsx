@@ -29,6 +29,7 @@ export default function CreateLDAManager({ onReady } = {}) {
   const [ldaSettings, setLdaSettings] = useState({
     daysOut: 5,
     includeFailingList: false,
+    includeSapList: false,
     includeLDATag: true,
     includeDNCTag: true,
     includeNextAssignmentDue: true,
@@ -106,6 +107,7 @@ export default function CreateLDAManager({ onReady } = {}) {
         setLdaSettings(prev => ({
           daysOut: (wb.daysOut !== undefined && wb.daysOut !== null) ? Number(wb.daysOut) : prev.daysOut,
           includeFailingList: (wb.includeFailingList !== undefined) ? !!wb.includeFailingList : prev.includeFailingList,
+          includeSapList: (wb.includeSapList !== undefined) ? !!wb.includeSapList : prev.includeSapList,
           includeLDATag: (wb.includeLDATag !== undefined) ? !!wb.includeLDATag : ((wb.includeLdatTag !== undefined) ? !!wb.includeLdatTag : prev.includeLDATag),
           includeDNCTag: (wb.includeDNCTag !== undefined) ? !!wb.includeDNCTag : ((wb.includeDncTag !== undefined) ? !!wb.includeDncTag : prev.includeDNCTag),
           includeNextAssignmentDue: (wb.includeNextAssignmentDue !== undefined) ? !!wb.includeNextAssignmentDue : prev.includeNextAssignmentDue,
@@ -757,6 +759,14 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         />
 
         <ToggleRow
+          key="toggle-sap-list"
+          label="Include SAP List"
+          tooltip="Add a table listing students whose AdSAPStatus is not 'SAP Met' (and not blank), excluding anyone already on the LDA or Failing tables."
+          isOn={settings.includeSapList}
+          onToggle={() => handleToggle('includeSapList')}
+        />
+
+        <ToggleRow
           key="toggle-next-assignment-due"
           label="Include Next Assignment Due"
           tooltip="Use each student's next assignment due date in retention messaging."
@@ -848,6 +858,7 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
       {(() => {
         const inclusionsOn = [
           settings.includeFailingList,
+          settings.includeSapList,
           settings.includeNextAssignmentDue,
           settings.riskIndex?.enabled ?? false,
         ].filter(Boolean).length;
@@ -1043,7 +1054,7 @@ function AssignedSettings({ settings, onSettingChange, onBack }) {
         .catch(() => { setDistribution([]); setDistLoading(false); });
     }, 300);
     return () => clearTimeout(timer);
-  }, [assignment.enabled, assignment.evenSplit, advisors, settings.daysOut, settings.includeFailingList, filterModalAdvisor]);
+  }, [assignment.enabled, assignment.evenSplit, advisors, settings.daysOut, settings.includeFailingList, settings.includeSapList, filterModalAdvisor]);
 
   const updateAssignment = (updates) => {
     onSettingChange('advisorAssignment', { ...assignment, ...updates });
