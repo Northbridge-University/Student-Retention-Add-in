@@ -764,36 +764,48 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
             }
 
             // --- STEP 4c: Filtering by SAP status ---
-            // Include students whose AdSAPStatus is not "SAP Met" and not blank,
-            // excluding anyone already on the LDA (days-out) or Failing tables so
-            // a student never appears twice. Sorted by SAP status value so like
-            // statuses group together.
+            // Include students whose AdSAPStatus is not "SAP Met" and not blank.
+            // Priority is LDA > SAP > Failing: exclude only students already on the
+            // LDA (days-out) table here, then drop any SAP-flagged student from the
+            // Failing list below so SAP wins over Failing. Sorted by SAP status value
+            // so like statuses group together.
             let sapRows = [];
             if (settings.includeSapList && sapIdx !== -1) {
-                const usedIds = new Set();
-                if (studentIdIdx !== -1) {
-                    for (const row of dataRows) {
-                        const sId = row.values[studentIdIdx];
-                        if (sId) usedIds.add(sId);
-                    }
-                    for (const row of failingRows) {
-                        const sId = row.values[studentIdIdx];
-                        if (sId) usedIds.add(sId);
-                    }
+                const ldaIds = new Set();
+                const ldaIndices = new Set();
+                for (const row of dataRows) {
+                    const sId = studentIdIdx !== -1 ? row.values[studentIdIdx] : null;
+                    if (sId) ldaIds.add(sId);
+                    ldaIndices.add(row.originalIndex);
                 }
+                const sapIds = new Set();
+                const sapIndices = new Set();
                 for (let i = 1; i < masterValues.length; i++) {
                     if (!isSapFlagged(masterValues[i][sapIdx])) continue;
                     const sId = studentIdIdx !== -1 ? masterValues[i][studentIdIdx] : null;
-                    if (sId && usedIds.has(sId)) continue;
+                    if (sId && ldaIds.has(sId)) continue;
+                    if (ldaIndices.has(i)) continue;
                     sapRows.push({
                         values: masterValues[i],
                         formulas: masterFormulas[i],
                         originalIndex: i
                     });
+                    if (sId) sapIds.add(sId);
+                    sapIndices.add(i);
                 }
                 sapRows.sort((a, b) =>
                     String(a.values[sapIdx] || '').toLowerCase().localeCompare(String(b.values[sapIdx] || '').toLowerCase())
                 );
+
+                // SAP wins over Failing: remove SAP-flagged students from the Failing
+                // list so a student never appears on both tables.
+                if (sapIndices.size > 0) {
+                    failingRows = failingRows.filter(row => {
+                        const sId = studentIdIdx !== -1 ? row.values[studentIdIdx] : null;
+                        if (sId && sapIds.has(sId)) return false;
+                        return !sapIndices.has(row.originalIndex);
+                    });
+                }
             }
 
             if (onProgress) onProgress('filter', 'completed');
@@ -2460,7 +2472,6 @@ export async function predictAdvisorDistribution(ldaSettings, advisors) {
             // Read all rows in batches and categorize
             const students = []; // { programVersion, daysOut, listType }
             const ldaStudentIds = new Set();
-            const failingStudentIds = new Set();
 
             // First pass: collect all rows
             const allRows = [];
@@ -2486,9 +2497,11 @@ export async function predictAdvisorDistribution(ldaSettings, advisors) {
                 }
             }
 
-            // Failing list (grade < 60% AND days out <= 4)
+            // Failing list (grade < 60% AND days out <= 4). SAP takes priority over
+            // Failing, so a SAP-flagged student is counted on the SAP list, not here.
             if (ldaSettings.includeFailingList && gradeIdx !== -1) {
                 for (const row of allRows) {
+                    if (ldaSettings.includeSapList && sapIdx !== -1 && isSapFlagged(row[sapIdx])) continue;
                     const gradeVal = row[gradeIdx];
                     const daysOutVal = row[daysOutIdx];
                     const isFailing = (typeof gradeVal === 'number') && (gradeVal < 0.60 || (gradeVal >= 1 && gradeVal < 60));
@@ -2499,18 +2512,16 @@ export async function predictAdvisorDistribution(ldaSettings, advisors) {
                             daysOut: typeof daysOutVal === 'number' ? daysOutVal : 0,
                             listType: 'failing'
                         });
-                        const sId = studentIdIdx !== -1 ? row[studentIdIdx] : null;
-                        if (sId) failingStudentIds.add(sId);
                     }
                 }
             }
 
-            // SAP list (AdSAPStatus not "SAP Met"/blank AND not already on LDA/Failing)
+            // SAP list (AdSAPStatus not "SAP Met"/blank AND not already on the LDA table)
             if (ldaSettings.includeSapList && sapIdx !== -1) {
                 for (const row of allRows) {
                     if (!isSapFlagged(row[sapIdx])) continue;
                     const sId = studentIdIdx !== -1 ? row[studentIdIdx] : null;
-                    if (sId && (ldaStudentIds.has(sId) || failingStudentIds.has(sId))) continue;
+                    if (sId && ldaStudentIds.has(sId)) continue;
                     const daysOutVal = row[daysOutIdx];
                     students.push({
                         programVersion: pvIdx !== -1 ? String(row[pvIdx] || '').trim() : '',

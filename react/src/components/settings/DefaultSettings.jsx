@@ -55,7 +55,7 @@ export const defaultWorkbookSettings = [
 		type: 'boolean',
 		defaultValue: false, // No
         section: 'Create LDA',
-		description: 'Whether to include the SAP list — students whose AdSAPStatus is not "SAP Met" (and not blank), excluding anyone already on the LDA or Failing tables.'
+		description: 'Whether to include the SAP list — students whose AdSAPStatus is not "SAP Met" (and not blank). Takes priority over the Failing list (a SAP-flagged failing student appears here instead); excludes students already on the LDA table.'
 	},
 	{
 		id: 'includeNextAssignmentDue',

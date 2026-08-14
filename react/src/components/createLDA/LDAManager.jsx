@@ -761,7 +761,7 @@ function LDASettings({ settings, onSettingChange, settingsView, setSettingsView 
         <ToggleRow
           key="toggle-sap-list"
           label="Include SAP List"
-          tooltip="Add a table listing students whose AdSAPStatus is not 'SAP Met' (and not blank), excluding anyone already on the LDA or Failing tables."
+          tooltip="Add a table listing students whose AdSAPStatus is not 'SAP Met' (and not blank). Takes priority over the Failing list — a failing student who is SAP-flagged appears here instead. Excludes students already on the LDA table."
           isOn={settings.includeSapList}
           onToggle={() => handleToggle('includeSapList')}
         />
