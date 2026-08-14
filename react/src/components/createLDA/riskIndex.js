@@ -26,6 +26,7 @@ import {
     GENDER_ALIASES,
     PROFILE_PICTURE_ALIASES,
 } from '../../../../shared/columnAliases.js';
+import { saveDocumentSetting } from '../utility/documentSettings.js';
 
 export const LDA_HISTORY_KEY = 'LDAHistory';
 
@@ -475,14 +476,21 @@ export function loadLdaHistory() {
 }
 
 export function saveLdaHistory(history) {
-    try {
-        if (typeof Office !== 'undefined' && Office.context && Office.context.document && Office.context.document.settings) {
-            Office.context.document.settings.set(LDA_HISTORY_KEY, history);
-            Office.context.document.settings.saveAsync(() => {});
-        }
-    } catch (e) {
-        console.warn('riskIndex: failed to save LDAHistory setting', e);
-    }
+    // LDAHistory grows one entry per day and is the most likely key to push the
+    // document-settings blob over Excel's size cap. Route through the diagnostic
+    // saver so a failure here is logged with its size instead of being swallowed.
+    return saveDocumentSetting(LDA_HISTORY_KEY, history, 'riskIndex.saveLdaHistory');
+}
+
+/**
+ * Wipe all saved LDA history, resetting the store to an empty (but valid)
+ * shape. Every student's Risk Index count derives from this history, so
+ * clearing it resets those counts to zero. Also the fastest way to shrink an
+ * oversized document-settings blob.
+ * @returns {Promise<boolean>} true on a confirmed successful save.
+ */
+export function clearLdaHistory() {
+    return saveDocumentSetting(LDA_HISTORY_KEY, { version: 1, days: {} }, 'riskIndex.clearLdaHistory');
 }
 
 /**

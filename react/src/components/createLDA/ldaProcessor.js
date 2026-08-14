@@ -9,6 +9,7 @@
  */
 
 import { getWorkbookSettings } from '../utility/getSettings';
+import { saveDocumentSetting } from '../utility/documentSettings';
 import { defaultColumns } from '../settings/DefaultSettings';
 import { MASTER_LIST_SHEET, HISTORY_SHEET, BATCH_SIZE } from '../../../../shared/constants.js';
 import { STUDENT_ID_ALIASES, STUDENT_NUMBER_ALIASES, LAST_LDA_ALIASES } from '../../../../shared/columnAliases.js';
@@ -285,8 +286,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
         if (typeof Office !== 'undefined' && Office.context && Office.context.document && Office.context.document.settings) {
             const existing = Office.context.document.settings.get('workbookSettings');
             if (!existing || !Array.isArray(existing.columns) || existing.columns.length === 0) {
-                Office.context.document.settings.set('workbookSettings', workbookSettings);
-                Office.context.document.settings.saveAsync(() => {});
+                saveDocumentSetting('workbookSettings', workbookSettings, 'ldaProcessor.autoInitColumns');
             }
         }
 

@@ -17,6 +17,8 @@
  * that student is viewed, on any machine that opens the workbook.
  */
 
+import { saveDocumentSetting } from '../components/utility/documentSettings.js';
+
 const DOC_KEY = 'workbookSettings';
 const CONTACTS_KEY = 'emergencyContacts';
 
@@ -40,21 +42,9 @@ function readWorkbookSettings() {
 
 function writeWorkbookSettings(mapping) {
     if (!isOfficeReady()) return Promise.resolve(false);
-    return new Promise(resolve => {
-        try {
-            Office.context.document.settings.set(DOC_KEY, mapping);
-            Office.context.document.settings.saveAsync(result => {
-                const ok = result && result.status === Office.AsyncResultStatus.Succeeded;
-                if (!ok && result && result.error) {
-                    console.warn('emergencyContacts: saveAsync failed', result.error);
-                }
-                resolve(!!ok);
-            });
-        } catch (err) {
-            console.warn('emergencyContacts: failed to set document settings', err);
-            resolve(false);
-        }
-    });
+    // Diagnostic saver: on failure logs the real error code/message and a
+    // per-key size breakdown (see documentSettings.js).
+    return saveDocumentSetting(DOC_KEY, mapping, 'emergencyContacts.writeWorkbookSettings');
 }
 
 // Normalize an identifier to a non-empty string key, or null when unusable.

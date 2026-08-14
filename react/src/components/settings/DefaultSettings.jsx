@@ -167,6 +167,14 @@ export const defaultWorkbookSettings = [
 		description: 'Download the saved LDA history (date, student ID, LDA, days out) as a CSV file.'
 	},
 	{
+		id: 'clearLdaHistory',
+		label: 'Clear History',
+		type: 'action',
+		defaultValue: null,
+		section: 'Risk Index',
+		description: 'Permanently delete all saved LDA history. This resets every student\'s Risk Index to zero and cannot be undone — download a copy first if you want a backup.'
+	},
+	{
 		id: 'riskLeaderboard',
 		label: 'At-Risk Students',
 		type: 'riskleaderboard',
