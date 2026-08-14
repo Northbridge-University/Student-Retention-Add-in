@@ -16,6 +16,8 @@
  * be used for future automation (e.g. routing, distribution lists).
  */
 
+import { saveDocumentSetting } from '../components/utility/documentSettings.js';
+
 const DOC_KEY = 'workbookSettings';
 const USERS_KEY = 'users';
 
@@ -39,21 +41,9 @@ function readWorkbookSettings() {
 
 function writeWorkbookSettings(mapping) {
     if (!isOfficeReady()) return Promise.resolve(false);
-    return new Promise(resolve => {
-        try {
-            Office.context.document.settings.set(DOC_KEY, mapping);
-            Office.context.document.settings.saveAsync(result => {
-                const ok = result && result.status === Office.AsyncResultStatus.Succeeded;
-                if (!ok && result && result.error) {
-                    console.warn('workbookUsers: saveAsync failed', result.error);
-                }
-                resolve(!!ok);
-            });
-        } catch (err) {
-            console.warn('workbookUsers: failed to set document settings', err);
-            resolve(false);
-        }
-    });
+    // Diagnostic saver: on failure logs the real error code/message and a
+    // per-key size breakdown (see documentSettings.js).
+    return saveDocumentSetting(DOC_KEY, mapping, 'workbookUsers.writeWorkbookSettings');
 }
 
 /**

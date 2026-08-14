@@ -8,6 +8,7 @@ import PowerAutomateConfigModal from './PowerAutomateConfigModal'; // <-- ADDED:
 import TemplateImportExportModal from './TemplateImportExportModal'; // <-- ADDED: Template import/export modal
 import CustomParamImportExportModal from './CustomParamImportExportModal'; // <-- ADDED: Custom parameters import/export modal
 import AdvancedLDAModal from './AdvancedLDAModal'; // <-- ADDED: Create LDA advanced options modal
+import { saveDocumentSetting, measureDocumentSettings } from '../utility/documentSettings'; // <-- settings write diagnostics
 import LicenseChecker from '../utility/LicenseChecker'; // <-- License checker (requires Graph API)
 import UserInfoDisplay from '../utility/UserInfoDisplay'; // <-- User info from token (no API needed)
 import About from '../about/About'; // <-- ADDED: Import About component for Help tab
@@ -582,22 +583,16 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 	};
 
 	const saveWorkbookSettingsToDocument = (mapping) => {
-		try {
-			if (typeof window !== 'undefined' && window.Office && Office.context && Office.context.document && Office.context.document.settings) {
-				Office.context.document.settings.set(DOC_KEY, mapping);
-				Office.context.document.settings.saveAsync(result => {
-					if (result && result.status !== Office.AsyncResultStatus.Succeeded) {
-						console.warn('Failed to save workbook settings to document', result.error);
-					}
-				});
-			}
-		} catch (err) {
-			console.warn('Failed to save document settings', err);
-		}
+		// Routed through saveDocumentSetting so any OSF.DDA.Error surfaces the
+		// real code/message plus a per-key size breakdown (see documentSettings.js).
+		return saveDocumentSetting(DOC_KEY, mapping, 'Settings.saveWorkbookSettingsToDocument');
 	};
 
 	// one-time effect: ensure document has a workbook settings key; load it if present
 	useEffect(() => {
+		// Baseline size log on every Settings open, so an approaching size-cap
+		// problem is visible in the console before a save actually fails.
+		measureDocumentSettings('Settings mount');
 		const existing = loadWorkbookSettingsFromDocument();
 		if (existing && typeof existing === 'object') {
 			// if columns are missing or empty, inject defaultColumns (one-time import)
