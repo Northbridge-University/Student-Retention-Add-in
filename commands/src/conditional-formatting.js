@@ -222,7 +222,9 @@ export async function applyHoldConditionalFormatting(context, sheet, headers) {
 }
 
 /**
- * Applies conditional formatting to the AdSAPStatus column to highlight cells containing "Financial" in light red
+ * Applies conditional formatting to the AdSAPStatus column: highlights cells that
+ * are NOT blank and NOT "SAP Met" (case-insensitive, whitespace-trimmed) in light
+ * red — the same rule as the Create LDA SAP List.
  * @param {Excel.RequestContext} context The request context
  * @param {Excel.Worksheet} sheet The worksheet to format
  * @param {string[]} headers The header row values
@@ -249,17 +251,27 @@ export async function applyAdSAPStatusConditionalFormatting(context, sheet, head
         }
 
         const adsapStatusColumnRange = sheet.getRangeByIndexes(1, adsapStatusColIdx, range.rowCount - 1, 1);
+        adsapStatusColumnRange.load("address");
 
         // Clear existing conditional formats on the column to avoid duplicates
         adsapStatusColumnRange.conditionalFormats.clearAll();
+        await context.sync();
 
-        // Apply conditional formatting: cells containing "Financial" get light red background
-        const conditionalFormat = adsapStatusColumnRange.conditionalFormats.add(Excel.ConditionalFormatType.containsText);
-        conditionalFormat.textComparison.format.fill.color = "#FFB6C1"; // Light red (light pink)
-        conditionalFormat.textComparison.rule = { operator: Excel.ConditionalTextOperator.contains, text: "Financial" };
+        // Top-left cell of the range, relative (no sheet name, no $ anchors), e.g. "M2".
+        // A custom conditional format formula is written for this cell and evaluated
+        // relative to every cell down the column.
+        const topLeft = adsapStatusColumnRange.address.split('!').pop().split(':')[0].replace(/\$/g, '');
+
+        // Highlight any cell that flags a SAP concern: NOT blank and NOT "SAP Met"
+        // — the same rule as the Create LDA SAP List. TRIM handles surrounding
+        // whitespace, and Excel's <> comparison is case-insensitive, so "sap met"
+        // and " SAP Met " are treated as met (not highlighted).
+        const conditionalFormat = adsapStatusColumnRange.conditionalFormats.add(Excel.ConditionalFormatType.custom);
+        conditionalFormat.custom.format.fill.color = "#FFB6C1"; // Light red (light pink)
+        conditionalFormat.custom.rule.formula = `=AND(TRIM(${topLeft})<>"",TRIM(${topLeft})<>"SAP Met")`;
 
         await context.sync();
-        console.log("ImportFromExtension: Conditional formatting applied to AdSAPStatus column (cells containing 'Financial' highlighted in light red)");
+        console.log("ImportFromExtension: Conditional formatting applied to AdSAPStatus column (non-blank, non-'SAP Met' cells highlighted in light red)");
     } catch (error) {
         console.error("ImportFromExtension: Error applying AdSAPStatus conditional formatting:", error);
         // Don't throw - formatting is not critical
