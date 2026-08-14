@@ -483,6 +483,17 @@ export function saveLdaHistory(history) {
 }
 
 /**
+ * Wipe all saved LDA history, resetting the store to an empty (but valid)
+ * shape. Every student's Risk Index count derives from this history, so
+ * clearing it resets those counts to zero. Also the fastest way to shrink an
+ * oversized document-settings blob.
+ * @returns {Promise<boolean>} true on a confirmed successful save.
+ */
+export function clearLdaHistory() {
+    return saveDocumentSetting(LDA_HISTORY_KEY, { version: 1, days: {} }, 'riskIndex.clearLdaHistory');
+}
+
+/**
  * Current Risk Index config from workbook settings (sanitized, with defaults).
  * Stored as flat keys (riskIndexEnabled, riskIndexThreshold,
  * riskIndexShowColumn) to match the Settings page's schema-driven rows.
