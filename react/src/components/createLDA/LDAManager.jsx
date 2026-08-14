@@ -9,6 +9,7 @@ import React, { useState, useEffect } from 'react';
 import { Info, CheckCircle2, Circle, Loader2, ArrowLeft, AlertCircle, ChevronRight, Plus, Pencil, Trash2, X, ClipboardList } from 'lucide-react';
 import { createLDA, detectCampuses, detectProgramVersions, predictAdvisorDistribution, checkMissingLDAColumns, addColumnsToMasterList, checkMasterListExists } from './ldaProcessor';
 import { DEFAULT_RISK_INDEX_SETTINGS, sanitizeRiskIndexSettings } from './riskIndex';
+import { saveDocumentSetting } from '../utility/documentSettings';
 
 // --- CONFIGURATION: Steps matching the processor logic ---
 const PROCESS_STEPS = [
@@ -205,8 +206,8 @@ export default function CreateLDAManager({ onReady } = {}) {
       if (typeof window !== 'undefined' && window.Office && Office.context && Office.context.document && Office.context.document.settings) {
         const wb = Office.context.document.settings.get('workbookSettings') || {};
         wb[key] = value;
-        Office.context.document.settings.set('workbookSettings', wb);
-        Office.context.document.settings.saveAsync(() => {});
+        // Diagnostic saver logs the real error + size breakdown on failure.
+        saveDocumentSetting('workbookSettings', wb, `LDAManager.saveToWorkbookSettings(${key})`);
       }
     } catch (e) {
       console.error(`Failed to save ${key}:`, e);

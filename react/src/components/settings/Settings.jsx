@@ -8,12 +8,14 @@ import PowerAutomateConfigModal from './PowerAutomateConfigModal'; // <-- ADDED:
 import TemplateImportExportModal from './TemplateImportExportModal'; // <-- ADDED: Template import/export modal
 import CustomParamImportExportModal from './CustomParamImportExportModal'; // <-- ADDED: Custom parameters import/export modal
 import AdvancedLDAModal from './AdvancedLDAModal'; // <-- ADDED: Create LDA advanced options modal
+import { saveDocumentSetting, measureDocumentSettings } from '../utility/documentSettings'; // <-- settings write diagnostics
 import LicenseChecker from '../utility/LicenseChecker'; // <-- License checker (requires Graph API)
 import UserInfoDisplay from '../utility/UserInfoDisplay'; // <-- User info from token (no API needed)
 import About from '../about/About'; // <-- ADDED: Import About component for Help tab
 import { HISTORY_SHEET, MASTER_LIST_SHEET } from '../../../../shared/constants.js';
 import { getWorkbookUsers } from '../../services/workbookUsers.js';
-import { loadLdaHistory, historyToCsv } from '../createLDA/riskIndex.js';
+import { loadLdaHistory, historyToCsv, clearLdaHistory as clearLdaHistoryStore } from '../createLDA/riskIndex.js';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import RiskIndexImportModal from './RiskIndexImportModal'; // <-- ADDED: Risk Index history import modal
 import RiskIndexLeaderboard from './RiskIndexLeaderboard'; // <-- ADDED: ranked at-risk students card
 
@@ -237,6 +239,10 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 	// Risk Index: LDA history import modal + download state
 	const [riskImportModalOpen, setRiskImportModalOpen] = useState(false);
 	const [downloadingLdaHistory, setDownloadingLdaHistory] = useState(false);
+	const [clearHistoryModalOpen, setClearHistoryModalOpen] = useState(false);
+	const [clearingLdaHistory, setClearingLdaHistory] = useState(false);
+	// Bumped to force the At-Risk leaderboard to reload after a history clear.
+	const [leaderboardRefresh, setLeaderboardRefresh] = useState(0);
 
 	// Default headers for a freshly-created Student History sheet. Each name is
 	// a canonical alias from shared/columnAliases.js so the existing add/edit/
@@ -479,6 +485,28 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 		}
 	};
 
+	// Risk Index: wipe the saved LDA history (confirmed via modal). Resets every
+	// student's Risk Index count to zero; also shrinks the document-settings blob.
+	const handleClearLdaHistory = async () => {
+		if (clearingLdaHistory) return;
+		setClearingLdaHistory(true);
+		try {
+			const ok = await clearLdaHistoryStore();
+			if (!ok) {
+				alert('Failed to clear LDA history. See the browser console for details.');
+				return;
+			}
+			setClearHistoryModalOpen(false);
+			// Reflect the reset in the At-Risk leaderboard without a manual refresh.
+			setLeaderboardRefresh(n => n + 1);
+		} catch (err) {
+			console.error('Failed to clear LDA history:', err);
+			alert(err.message || 'Failed to clear LDA history');
+		} finally {
+			setClearingLdaHistory(false);
+		}
+	};
+
 	const openArrayModal = async (setting, currentValue, updater) => {
 		// if this is the columns setting, read master list headers first
 		if (setting.id === 'columns') {
@@ -582,22 +610,16 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 	};
 
 	const saveWorkbookSettingsToDocument = (mapping) => {
-		try {
-			if (typeof window !== 'undefined' && window.Office && Office.context && Office.context.document && Office.context.document.settings) {
-				Office.context.document.settings.set(DOC_KEY, mapping);
-				Office.context.document.settings.saveAsync(result => {
-					if (result && result.status !== Office.AsyncResultStatus.Succeeded) {
-						console.warn('Failed to save workbook settings to document', result.error);
-					}
-				});
-			}
-		} catch (err) {
-			console.warn('Failed to save document settings', err);
-		}
+		// Routed through saveDocumentSetting so any OSF.DDA.Error surfaces the
+		// real code/message plus a per-key size breakdown (see documentSettings.js).
+		return saveDocumentSetting(DOC_KEY, mapping, 'Settings.saveWorkbookSettingsToDocument');
 	};
 
 	// one-time effect: ensure document has a workbook settings key; load it if present
 	useEffect(() => {
+		// Baseline size log on every Settings open, so an approaching size-cap
+		// problem is visible in the console before a save actually fails.
+		measureDocumentSettings('Settings mount');
 		const existing = loadWorkbookSettingsFromDocument();
 		if (existing && typeof existing === 'object') {
 			// if columns are missing or empty, inject defaultColumns (one-time import)
@@ -671,10 +693,10 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 			if (setting.type === 'userslist') {
 				return <UsersList key={setting.id} />;
 			}
-			// Custom full-width row: students ranked by Risk Index. Keyed off the
-			// import modal's open state so closing it reloads fresh history.
+			// Custom full-width row: students ranked by Risk Index. Reloads when the
+			// import modal closes or the history is cleared (either changes the token).
 			if (setting.type === 'riskleaderboard') {
-				return <RiskIndexLeaderboard key={setting.id} refreshToken={riskImportModalOpen} />;
+				return <RiskIndexLeaderboard key={setting.id} refreshToken={`${riskImportModalOpen}|${leaderboardRefresh}`} />;
 			}
 			return (
 				<div key={setting.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box' }}>
@@ -865,6 +887,12 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 										<line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
 									</svg>
 								);
+								const trashIcon = (
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+										<polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+										<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+									</svg>
+								);
 
 								// historyCommentCount is null both before the workbook summary loads and
 								// when the History sheet doesn't exist — either way, there's nothing to
@@ -905,6 +933,13 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 										icon: downloadIcon,
 										idle: 'Download',
 										busyLabel: 'Downloading...',
+									},
+									clearLdaHistory: {
+										run: () => setClearHistoryModalOpen(true),
+										busy: clearingLdaHistory,
+										icon: trashIcon,
+										idle: 'Clear',
+										busyLabel: 'Clearing...',
 									},
 								};
 								const action = actions[setting.id];
@@ -1257,6 +1292,15 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 			<RiskIndexImportModal
 				isOpen={riskImportModalOpen}
 				onClose={() => setRiskImportModalOpen(false)}
+			/>
+
+			<DeleteConfirmModal
+				isOpen={clearHistoryModalOpen}
+				title="Clear LDA history?"
+				message="This permanently deletes all saved LDA history and resets every student's Risk Index to zero. This cannot be undone. Consider using Download History first if you want a backup."
+				confirmLabel={clearingLdaHistory ? 'Clearing...' : 'Clear History'}
+				onConfirm={handleClearLdaHistory}
+				onCancel={() => { if (!clearingLdaHistory) setClearHistoryModalOpen(false); }}
 			/>
 		</div>
 	);
