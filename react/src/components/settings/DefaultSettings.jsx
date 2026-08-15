@@ -50,6 +50,14 @@ export const defaultWorkbookSettings = [
 		description: 'Whether to include the failing student list.'
 	},
 	{
+		id: 'includeSapList',
+		label: 'SAP List',
+		type: 'boolean',
+		defaultValue: false, // No
+        section: 'Create LDA',
+		description: 'Whether to include the SAP list — students whose AdSAPStatus is not "SAP Met" (and not blank). Takes priority over the Failing list (a SAP-flagged failing student appears here instead); excludes students already on the LDA table.'
+	},
+	{
 		id: 'includeNextAssignmentDue',
 		label: 'Next Assignment Due',
 		type: 'boolean',
@@ -173,6 +181,41 @@ export const defaultWorkbookSettings = [
 		defaultValue: null,
 		section: 'Risk Index',
 		description: 'Permanently delete all saved LDA history. This resets every student\'s Risk Index to zero and cannot be undone — download a copy first if you want a backup.'
+	},
+	{
+		id: 'ldaHistoryPrune',
+		label: 'History Pruning',
+		type: 'pruneconfig',
+		defaultValue: null,
+		section: 'Risk Index',
+		description: 'Auto-trim saved LDA history so it stays under Excel\'s settings size limit. Configure the size/day budget and prune on demand.'
+	},
+	{
+		// Surfaced via the History Pruning modal; hidden from the normal list.
+		id: 'ldaHistoryPruneEnabled',
+		label: 'Auto-prune History',
+		type: 'boolean',
+		defaultValue: true,
+		hidden: true,
+		description: 'When on, LDA history is trimmed to the size/day budget every time it is saved.'
+	},
+	{
+		// Surfaced via the History Pruning modal; hidden from the normal list.
+		id: 'ldaHistoryMaxSizeKB',
+		label: 'History Max Size (KB)',
+		type: 'number',
+		defaultValue: 150,
+		hidden: true,
+		description: 'Byte budget for saved LDA history. Oldest days are dropped first once the history exceeds this. Kept well under Excel\'s ~256 KB settings cap so the rest of the settings still fit.'
+	},
+	{
+		// Surfaced via the History Pruning modal; hidden from the normal list.
+		id: 'ldaHistoryMaxDays',
+		label: 'History Max Days',
+		type: 'number',
+		defaultValue: 0,
+		hidden: true,
+		description: 'Keep at most this many of the most-recent days of history. 0 means no day-count limit (size is the only bound).'
 	},
 	{
 		id: 'riskLeaderboard',

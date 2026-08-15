@@ -17,6 +17,9 @@ import {
     excelCellToValue,
     rowsToImportedDays,
     buildRiskLeaderboard,
+    sanitizePruneConfig,
+    DEFAULT_PRUNE_CONFIG,
+    pruneHistory,
 } from '../riskIndex.js';
 
 describe('sanitizeRiskIndexSettings', () => {
@@ -453,5 +456,73 @@ describe('buildRiskLeaderboard', () => {
         expect(buildRiskLeaderboard(new Map([['10', 1]]), null)).toEqual([]);
         expect(buildRiskLeaderboard(new Map([['10', 1]]), [['No Id Col'], ['x']])).toEqual([]);
         expect(buildRiskLeaderboard(null, master)).toEqual([]);
+    });
+});
+
+describe('sanitizePruneConfig', () => {
+    it('returns defaults for missing/invalid input', () => {
+        expect(sanitizePruneConfig(undefined)).toEqual(DEFAULT_PRUNE_CONFIG);
+        expect(sanitizePruneConfig(null)).toEqual(DEFAULT_PRUNE_CONFIG);
+        expect(sanitizePruneConfig('nope')).toEqual(DEFAULT_PRUNE_CONFIG);
+    });
+
+    it('keeps explicit valid values and floors numbers', () => {
+        expect(sanitizePruneConfig({ enabled: false, maxSizeKB: 100.9, maxDays: 30.7 }))
+            .toEqual({ enabled: false, maxSizeKB: 100, maxDays: 30 });
+    });
+
+    it('falls back on out-of-range numbers', () => {
+        expect(sanitizePruneConfig({ maxSizeKB: 0, maxDays: -5 }))
+            .toEqual({ enabled: true, maxSizeKB: 150, maxDays: 0 });
+    });
+});
+
+describe('pruneHistory', () => {
+    // Build a history with `n` days, each carrying `perDay` students so we can
+    // push the serialized size around predictably.
+    const makeHistory = (dayKeys, perDay = 1) => {
+        const days = {};
+        dayKeys.forEach(k => {
+            const snap = {};
+            for (let i = 0; i < perDay; i++) snap[`stu${i}`] = { lda: '2026-01-01', daysOut: i };
+            days[k] = snap;
+        });
+        return { version: 1, days };
+    };
+
+    it('drops the oldest days past maxDays', () => {
+        const h = makeHistory(['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04']);
+        const { history, removed } = pruneHistory(h, { enabled: true, maxSizeKB: 9999, maxDays: 2 });
+        expect(Object.keys(history.days).sort()).toEqual(['2026-01-03', '2026-01-04']);
+        expect(removed.sort()).toEqual(['2026-01-01', '2026-01-02']);
+    });
+
+    it('drops oldest days until under the size budget', () => {
+        // ~200 students/day; a 1 KB budget forces most days out.
+        const h = makeHistory(['2026-01-01', '2026-01-02', '2026-01-03'], 200);
+        const { history } = pruneHistory(h, { enabled: true, maxSizeKB: 1, maxDays: 0 });
+        const keys = Object.keys(history.days);
+        // Newest day is always kept, oldest dropped first.
+        expect(keys).toContain('2026-01-03');
+        expect(keys).not.toContain('2026-01-01');
+    });
+
+    it('never drops the single most-recent day even if it alone exceeds budget', () => {
+        const h = makeHistory(['2026-01-01'], 500);
+        const { history, removed } = pruneHistory(h, { enabled: true, maxSizeKB: 1, maxDays: 0 });
+        expect(Object.keys(history.days)).toEqual(['2026-01-01']);
+        expect(removed).toEqual([]);
+    });
+
+    it('is a no-op when disabled', () => {
+        const h = makeHistory(['2026-01-01', '2026-01-02', '2026-01-03'], 200);
+        const { history, removed } = pruneHistory(h, { enabled: false, maxSizeKB: 1, maxDays: 1 });
+        expect(Object.keys(history.days).length).toBe(3);
+        expect(removed).toEqual([]);
+    });
+
+    it('handles empty/garbage history without throwing', () => {
+        expect(pruneHistory(null, DEFAULT_PRUNE_CONFIG).history).toEqual({ version: 1, days: {} });
+        expect(pruneHistory({ bogus: true }, DEFAULT_PRUNE_CONFIG).history).toEqual({ version: 1, days: {} });
     });
 });

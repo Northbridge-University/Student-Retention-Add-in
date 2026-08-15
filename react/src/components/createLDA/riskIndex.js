@@ -26,7 +26,7 @@ import {
     GENDER_ALIASES,
     PROFILE_PICTURE_ALIASES,
 } from '../../../../shared/columnAliases.js';
-import { saveDocumentSetting } from '../utility/documentSettings.js';
+import { saveDocumentSetting, byteSize } from '../utility/documentSettings.js';
 
 export const LDA_HISTORY_KEY = 'LDAHistory';
 
@@ -45,6 +45,76 @@ export function sanitizeRiskIndexSettings(raw) {
         threshold: (Number.isFinite(threshold) && threshold >= 1) ? Math.floor(threshold) : defaults.threshold,
         showColumn: (raw.showColumn !== undefined) ? !!raw.showColumn : defaults.showColumn,
     };
+}
+
+// LDAHistory auto-prune configuration. The whole document-settings blob shares
+// Excel's ~256 KB cap, so LDAHistory is budgeted well under it (workbookSettings
+// and the other keys need the remaining headroom). Defaults: prune on, 150 KB.
+export const DEFAULT_PRUNE_CONFIG = {
+    enabled: true,
+    maxSizeKB: 150,
+    maxDays: 0, // 0 = no day-count limit; size is the only bound
+};
+
+export function sanitizePruneConfig(raw) {
+    const d = { ...DEFAULT_PRUNE_CONFIG };
+    if (!raw || typeof raw !== 'object') return d;
+    const maxSizeKB = Number(raw.maxSizeKB);
+    const maxDays = Number(raw.maxDays);
+    return {
+        enabled: (raw.enabled !== undefined) ? !!raw.enabled : d.enabled,
+        maxSizeKB: (Number.isFinite(maxSizeKB) && maxSizeKB >= 1) ? Math.floor(maxSizeKB) : d.maxSizeKB,
+        maxDays: (Number.isFinite(maxDays) && maxDays >= 0) ? Math.floor(maxDays) : d.maxDays,
+    };
+}
+
+/**
+ * Prune LDA history to fit the configured limits, dropping the OLDEST days
+ * first (day keys are 'YYYY-MM-DD', so a lexical sort is chronological).
+ * - maxDays > 0: keep at most that many most-recent days.
+ * - maxSizeKB: drop oldest days until the serialized history fits the byte
+ *   budget. The single most-recent day is never dropped, so today's snapshot
+ *   always survives even if it alone exceeds the budget.
+ * Both bounds apply only when `enabled`; disabling turns off all pruning.
+ * Pure: returns { history, removed } and never touches Office.
+ * @returns {{ history: {version:number, days:Object}, removed: string[] }}
+ */
+export function pruneHistory(history, config) {
+    const cfg = sanitizePruneConfig(config);
+    const srcDays = (history && typeof history === 'object' && history.days && typeof history.days === 'object')
+        ? history.days
+        : {};
+    let keys = Object.keys(srcDays).sort(); // ascending → oldest first
+    const removed = [];
+
+    if (!cfg.enabled) {
+        return { history: { version: 1, days: { ...srcDays } }, removed };
+    }
+
+    // Day-count cap.
+    if (cfg.maxDays > 0 && keys.length > cfg.maxDays) {
+        const dropCount = keys.length - cfg.maxDays;
+        removed.push(...keys.slice(0, dropCount));
+        keys = keys.slice(dropCount);
+    }
+
+    // Size cap: keep dropping the oldest until under budget (but never the last day).
+    if (cfg.maxSizeKB > 0) {
+        const budget = cfg.maxSizeKB * 1024;
+        const sizeOf = (ks) => {
+            const days = {};
+            ks.forEach(k => { days[k] = srcDays[k]; });
+            return byteSize({ version: 1, days });
+        };
+        while (keys.length > 1 && sizeOf(keys) > budget) {
+            removed.push(keys[0]);
+            keys = keys.slice(1);
+        }
+    }
+
+    const days = {};
+    keys.forEach(k => { days[k] = srcDays[k]; });
+    return { history: { version: 1, days }, removed };
 }
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -475,11 +545,46 @@ export function loadLdaHistory() {
     return { version: 1, days: {} };
 }
 
-export function saveLdaHistory(history) {
+export function saveLdaHistory(history, config) {
     // LDAHistory grows one entry per day and is the most likely key to push the
-    // document-settings blob over Excel's size cap. Route through the diagnostic
-    // saver so a failure here is logged with its size instead of being swallowed.
-    return saveDocumentSetting(LDA_HISTORY_KEY, history, 'riskIndex.saveLdaHistory');
+    // document-settings blob over Excel's size cap. Auto-prune to the configured
+    // budget before saving, then route through the diagnostic saver so any
+    // remaining failure is logged with its size instead of being swallowed.
+    const { history: pruned } = pruneHistory(history, config || getPruneConfig());
+    return saveDocumentSetting(LDA_HISTORY_KEY, pruned, 'riskIndex.saveLdaHistory');
+}
+
+/**
+ * Current auto-prune config from workbook settings (sanitized, with defaults).
+ * Stored as flat keys (ldaHistoryPruneEnabled, ldaHistoryMaxSizeKB,
+ * ldaHistoryMaxDays) to match the Settings page's schema-driven rows.
+ */
+export function getPruneConfig() {
+    try {
+        if (typeof Office !== 'undefined' && Office.context && Office.context.document && Office.context.document.settings) {
+            const wb = Office.context.document.settings.get('workbookSettings') || {};
+            return sanitizePruneConfig({
+                enabled: wb.ldaHistoryPruneEnabled,
+                maxSizeKB: wb.ldaHistoryMaxSizeKB,
+                maxDays: wb.ldaHistoryMaxDays,
+            });
+        }
+    } catch (e) {
+        console.warn('riskIndex: failed to read prune config', e);
+    }
+    return { ...DEFAULT_PRUNE_CONFIG };
+}
+
+/**
+ * Apply the current (or supplied) prune config to the saved history right now
+ * and persist the result. Used by the "Prune now" button in the config modal.
+ * @returns {Promise<{ ok: boolean, removed: string[], dayCount: number }>}
+ */
+export async function pruneLdaHistoryNow(config) {
+    const cfg = config || getPruneConfig();
+    const { history: pruned, removed } = pruneHistory(loadLdaHistory(), cfg);
+    const ok = await saveDocumentSetting(LDA_HISTORY_KEY, pruned, 'riskIndex.pruneLdaHistoryNow');
+    return { ok, removed, dayCount: Object.keys(pruned.days).length };
 }
 
 /**

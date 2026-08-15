@@ -18,6 +18,7 @@ import {
     normalizeName,
     formatToLastFirst,
     parseDate,
+    normalizeAttendanceValue,
 } from './constants.js';
 import { findColumnIndex, normalizeHeader } from '../../shared/excel-helpers.js';
 import { BATCH_SIZE } from '../../shared/constants.js';
@@ -388,6 +389,7 @@ export async function importMasterListFromExtension(payload) {
             const masterStudentNameCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.STUDENT_NAME_COLS);
             const masterGradebookCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.gradeBook);
             const masterAssignedCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.assigned);
+            const masterAttendanceCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.attendance);
             const masterMissingAssignmentsCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.courseMissingAssignments);
             const incomingMissingAssignmentsCol = findColumnIndex(normalizedIncomingHeaders, CONSTANTS.COLUMN_MAPPINGS.courseMissingAssignments);
             const masterIdCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.STUDENT_ID_COLS);
@@ -570,6 +572,13 @@ export async function importMasterListFromExtension(payload) {
                         // Format student name to "Last, First"
                         if (masterColIdx === masterStudentNameCol) {
                             cellValue = formatToLastFirst(String(cellValue));
+                        }
+
+                        // Normalize attendance to a fraction (67 or "67%" -> 0.67)
+                        // so the "0%" number format displays it as "67%" instead
+                        // of "6700%".
+                        if (masterColIdx === masterAttendanceCol && cellValue !== "") {
+                            cellValue = normalizeAttendanceValue(cellValue);
                         }
 
                         // Wrap Gradebook URLs in HYPERLINK formula

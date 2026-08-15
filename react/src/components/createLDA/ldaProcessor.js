@@ -12,7 +12,7 @@ import { getWorkbookSettings } from '../utility/getSettings';
 import { saveDocumentSetting } from '../utility/documentSettings';
 import { defaultColumns } from '../settings/DefaultSettings';
 import { MASTER_LIST_SHEET, HISTORY_SHEET, BATCH_SIZE } from '../../../../shared/constants.js';
-import { STUDENT_ID_ALIASES, STUDENT_NUMBER_ALIASES, LAST_LDA_ALIASES } from '../../../../shared/columnAliases.js';
+import { STUDENT_ID_ALIASES, STUDENT_NUMBER_ALIASES, LAST_LDA_ALIASES, SAP_STATUS_ALIASES } from '../../../../shared/columnAliases.js';
 import { sanitizeRiskIndexSettings, buildDailySnapshot, mergeSnapshot, countRiskEpisodes, lookupRiskCount, loadLdaHistory, saveLdaHistory, todayKey } from './riskIndex.js';
 
 const SHEET_NAMES = {
@@ -258,6 +258,19 @@ function getRetentionMessage(sIds, ldaMap, missingVal, tableContext, dncMap, dnc
 }
 
 /**
+ * True when a SAP status value flags a student for the SAP List — i.e. it is
+ * present and not "SAP Met" (case-insensitive, trimmed). Blank/empty is treated
+ * as passing (not flagged), matching the AdSAPStatus convention.
+ * @param {*} value - raw AdSAPStatus cell value
+ * @returns {boolean}
+ */
+export function isSapFlagged(value) {
+    const s = String(value ?? '').trim();
+    if (s === '') return false;
+    return s.toLowerCase() !== 'sap met';
+}
+
+/**
  * Main function to create the LDA report.
  * @param {Object} userOverrides - The settings from the UI (daysOut, includeFailingList, etc.)
  * @param {Function} onProgress - Callback to update UI steps: (stepId, status) => void
@@ -293,6 +306,7 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
         const settings = {
             daysOut: userOverrides.daysOut ?? 5,
             includeFailingList: userOverrides.includeFailingList ?? false,
+            includeSapList: userOverrides.includeSapList ?? false,
             includeAttendanceList: userOverrides.includeAttendanceList ?? false,
             includeLDATag: userOverrides.includeLDATag ?? true,
             includeDNCTag: userOverrides.includeDNCTag ?? true,
@@ -520,6 +534,12 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 });
             }
 
+            // Look for the SAP status column (AdSAPStatus) for the SAP List table.
+            let sapIdx = getColIndex('AdSAPStatus');
+            if (sapIdx === -1) {
+                sapIdx = headers.findIndex(h => SAP_STATUS_ALIASES.some(a => stripStr(h) === stripStr(a)));
+            }
+
             if (daysOutIdx === -1) throw new Error("Could not find 'Days Out' column in Master List. Check Settings.");
 
             // --- Risk Index: daily LDA/Days Out snapshot + episode counts ---
@@ -743,6 +763,51 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                 }
             }
 
+            // --- STEP 4c: Filtering by SAP status ---
+            // Include students whose AdSAPStatus is not "SAP Met" and not blank.
+            // Priority is LDA > SAP > Failing: exclude only students already on the
+            // LDA (days-out) table here, then drop any SAP-flagged student from the
+            // Failing list below so SAP wins over Failing. Sorted by SAP status value
+            // so like statuses group together.
+            let sapRows = [];
+            if (settings.includeSapList && sapIdx !== -1) {
+                const ldaIds = new Set();
+                const ldaIndices = new Set();
+                for (const row of dataRows) {
+                    const sId = studentIdIdx !== -1 ? row.values[studentIdIdx] : null;
+                    if (sId) ldaIds.add(sId);
+                    ldaIndices.add(row.originalIndex);
+                }
+                const sapIds = new Set();
+                const sapIndices = new Set();
+                for (let i = 1; i < masterValues.length; i++) {
+                    if (!isSapFlagged(masterValues[i][sapIdx])) continue;
+                    const sId = studentIdIdx !== -1 ? masterValues[i][studentIdIdx] : null;
+                    if (sId && ldaIds.has(sId)) continue;
+                    if (ldaIndices.has(i)) continue;
+                    sapRows.push({
+                        values: masterValues[i],
+                        formulas: masterFormulas[i],
+                        originalIndex: i
+                    });
+                    if (sId) sapIds.add(sId);
+                    sapIndices.add(i);
+                }
+                sapRows.sort((a, b) =>
+                    String(a.values[sapIdx] || '').toLowerCase().localeCompare(String(b.values[sapIdx] || '').toLowerCase())
+                );
+
+                // SAP wins over Failing: remove SAP-flagged students from the Failing
+                // list so a student never appears on both tables.
+                if (sapIndices.size > 0) {
+                    failingRows = failingRows.filter(row => {
+                        const sId = studentIdIdx !== -1 ? row.values[studentIdIdx] : null;
+                        if (sId && sapIds.has(sId)) return false;
+                        return !sapIndices.has(row.originalIndex);
+                    });
+                }
+            }
+
             if (onProgress) onProgress('filter', 'completed');
 
             // --- Advisor Auto-Assignment Map ---
@@ -780,6 +845,14 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                         programVersion: programVersionIdx !== -1 ? String(r.values[programVersionIdx] || '').trim() : '',
                         daysOut: typeof r.values[daysOutIdx] === 'number' ? r.values[daysOutIdx] : 0,
                         listType: 'attendance',
+                        originalIndex: r.originalIndex
+                    });
+                }
+                for (const r of sapRows) {
+                    taggedStudents.push({
+                        programVersion: programVersionIdx !== -1 ? String(r.values[programVersionIdx] || '').trim() : '',
+                        daysOut: typeof r.values[daysOutIdx] === 'number' ? r.values[daysOutIdx] : 0,
+                        listType: 'sap',
                         originalIndex: r.originalIndex
                     });
                 }
@@ -1241,6 +1314,9 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                     const campusAttendanceRows = attendanceRows.filter(r =>
                         String(r.values[campusIdx] || '').trim() === campusName
                     );
+                    const campusSapRows = sapRows.filter(r =>
+                        String(r.values[campusIdx] || '').trim() === campusName
+                    );
 
                     // Create sheet for this campus
                     let sheetName = campusName;
@@ -1297,6 +1373,22 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                             campusAttendanceRows.map(r => buildOutputRow(r, 'Attendance_Table')),
                             masterSheet, getColIndex, dateColumnIndices, null
                         );
+                        nextRow += campusAttendanceRows.length + 4;
+                    }
+
+                    // Write SAP table for this campus (if applicable)
+                    if (settings.includeSapList && campusSapRows.length > 0) {
+                        const sapTitle = newSheet.getRangeByIndexes(nextRow - 1, 0, 1, 1);
+                        sapTitle.values = [["SAP Students (Not Met)"]];
+                        sapTitle.format.font.bold = true;
+
+                        await writeTable(
+                            context, newSheet, nextRow, `SAP_${ci}`,
+                            outputColumns,
+                            campusSapRows.map(r => buildOutputRow(r, 'SAP_Table')),
+                            masterSheet, getColIndex, dateColumnIndices, null
+                        );
+                        nextRow += campusSapRows.length + 4;
                     }
 
                     // Autofit & hide columns
@@ -1677,6 +1769,17 @@ export async function createLDA(userOverrides, onProgress, onBatchProgress = nul
                         rows: attendanceRows.map(r => buildOutputRow(r, 'Attendance_Table')),
                         title: { row: nextRow - 1, text: 'Low Attendance Students' },
                     });
+                    nextRow += attendanceRows.length + 4;
+                }
+
+                if (settings.includeSapList && sapRows.length > 0) {
+                    tablePlan.push({
+                        tableName: 'SAP_Table',
+                        startRow: nextRow,
+                        rows: sapRows.map(r => buildOutputRow(r, 'SAP_Table')),
+                        title: { row: nextRow - 1, text: 'SAP Students (Not Met)' },
+                    });
+                    nextRow += sapRows.length + 4;
                 }
 
                 // Write any titles + table data (phase: writing). Titles need to exist
@@ -2358,6 +2461,7 @@ export async function predictAdvisorDistribution(ldaSettings, advisors) {
                 const s = stripStr(h);
                 return s === 'attendance%' || s === 'attendancepercent' || s === 'attendance';
             });
+            const sapIdx = headers.findIndex(h => SAP_STATUS_ALIASES.some(a => stripStr(h) === stripStr(a)));
             const studentIdIdx = headers.findIndex(h => {
                 const s = stripStr(h);
                 return s === 'studentnumber' || s === 'studentid';
@@ -2393,9 +2497,11 @@ export async function predictAdvisorDistribution(ldaSettings, advisors) {
                 }
             }
 
-            // Failing list (grade < 60% AND days out <= 4)
+            // Failing list (grade < 60% AND days out <= 4). SAP takes priority over
+            // Failing, so a SAP-flagged student is counted on the SAP list, not here.
             if (ldaSettings.includeFailingList && gradeIdx !== -1) {
                 for (const row of allRows) {
+                    if (ldaSettings.includeSapList && sapIdx !== -1 && isSapFlagged(row[sapIdx])) continue;
                     const gradeVal = row[gradeIdx];
                     const daysOutVal = row[daysOutIdx];
                     const isFailing = (typeof gradeVal === 'number') && (gradeVal < 0.60 || (gradeVal >= 1 && gradeVal < 60));
@@ -2407,6 +2513,21 @@ export async function predictAdvisorDistribution(ldaSettings, advisors) {
                             listType: 'failing'
                         });
                     }
+                }
+            }
+
+            // SAP list (AdSAPStatus not "SAP Met"/blank AND not already on the LDA table)
+            if (ldaSettings.includeSapList && sapIdx !== -1) {
+                for (const row of allRows) {
+                    if (!isSapFlagged(row[sapIdx])) continue;
+                    const sId = studentIdIdx !== -1 ? row[studentIdIdx] : null;
+                    if (sId && ldaStudentIds.has(sId)) continue;
+                    const daysOutVal = row[daysOutIdx];
+                    students.push({
+                        programVersion: pvIdx !== -1 ? String(row[pvIdx] || '').trim() : '',
+                        daysOut: typeof daysOutVal === 'number' ? daysOutVal : 0,
+                        listType: 'sap'
+                    });
                 }
             }
 

@@ -38,6 +38,11 @@ export const OUTREACH_ALIASES = ['outreach', 'comments', 'notes', 'comment'];
 export const HOLD_ALIASES = ['hold'];
 // Broad: matches assigned/advisor/counselor/assigned-to.
 export const ASSIGNED_ALIASES = ['assigned', 'advisor', 'counselor', 'assigned to'];
+
+// Academic SAP (Satisfactory Academic Progress) status column, e.g. AdSAPStatus.
+// Values other than "SAP Met" (or blank) flag a student on the Create LDA
+// "SAP List" table.
+export const SAP_STATUS_ALIASES = ['ad sap status', 'sap status', 'sap'];
 // "Created by" / "Author" / "Advisor" — overlaps deliberately with
 // ASSIGNED_ALIASES on 'advisor' since the assigned advisor often is the
 // author of comments.

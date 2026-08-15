@@ -8,6 +8,7 @@ import PowerAutomateConfigModal from './PowerAutomateConfigModal'; // <-- ADDED:
 import TemplateImportExportModal from './TemplateImportExportModal'; // <-- ADDED: Template import/export modal
 import CustomParamImportExportModal from './CustomParamImportExportModal'; // <-- ADDED: Custom parameters import/export modal
 import AdvancedLDAModal from './AdvancedLDAModal'; // <-- ADDED: Create LDA advanced options modal
+import PruneConfigModal from './PruneConfigModal'; // <-- ADDED: LDA history prune config modal
 import { saveDocumentSetting, measureDocumentSettings } from '../utility/documentSettings'; // <-- settings write diagnostics
 import LicenseChecker from '../utility/LicenseChecker'; // <-- License checker (requires Graph API)
 import UserInfoDisplay from '../utility/UserInfoDisplay'; // <-- User info from token (no API needed)
@@ -241,6 +242,7 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 	const [downloadingLdaHistory, setDownloadingLdaHistory] = useState(false);
 	const [clearHistoryModalOpen, setClearHistoryModalOpen] = useState(false);
 	const [clearingLdaHistory, setClearingLdaHistory] = useState(false);
+	const [pruneModalOpen, setPruneModalOpen] = useState(false);
 	// Bumped to force the At-Risk leaderboard to reload after a history clear.
 	const [leaderboardRefresh, setLeaderboardRefresh] = useState(0);
 
@@ -866,6 +868,18 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 								);
 							}
 
+							if (setting.type === 'pruneconfig') {
+								return (
+									<button
+										onClick={() => setPruneModalOpen(true)}
+										style={{ padding: '6px 10px', borderRadius: 6, background: '#f3f4f6', border: '1px solid #e6e7eb', cursor: 'pointer' }}
+										aria-label={`Configure LDA history pruning`}
+									>
+										Configure
+									</button>
+								);
+							}
+
 							if (setting.type === 'action') {
 								const plusIcon = (
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -1292,6 +1306,13 @@ const Settings = ({ user, accessToken, onReady }) => { // <-- ADDED accessToken 
 			<RiskIndexImportModal
 				isOpen={riskImportModalOpen}
 				onClose={() => setRiskImportModalOpen(false)}
+			/>
+
+			<PruneConfigModal
+				isOpen={pruneModalOpen}
+				onClose={() => setPruneModalOpen(false)}
+				values={workbookSettingsState}
+				onChange={updateWorkbookSetting}
 			/>
 
 			<DeleteConfirmModal
