@@ -659,7 +659,14 @@ export async function importMasterListFromExtension(payload) {
                                 formulaRow[colIdx] = preserved.formulas[colIdx];
                                 newRow[colIdx] = preserved.values[colIdx] || "";
                             } else if (preserved.values[colIdx] !== undefined) {
-                                newRow[colIdx] = preserved.values[colIdx];
+                                let preservedVal = preserved.values[colIdx];
+                                // Attendance carried over from the existing sheet must be
+                                // normalized too, otherwise a stale whole-number value (43)
+                                // re-renders as "4300%" under the "0%" number format.
+                                if (colIdx === masterAttendanceCol && preservedVal !== "") {
+                                    preservedVal = normalizeAttendanceValue(preservedVal);
+                                }
+                                newRow[colIdx] = preservedVal;
                             }
                         }
                     }
