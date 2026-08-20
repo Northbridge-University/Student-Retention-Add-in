@@ -1,46 +1,67 @@
 # Microsoft SSO Setup Guide
 
-This guide will help you configure Microsoft Single Sign-On (SSO) for the Student Retention Add-in.
+This guide covers how Microsoft Single Sign-On (SSO) is configured for the Student Retention Add-in,
+and how to stand up or re-create the Azure AD app registration behind it.
 
 ## Overview
 
-The add-in now supports **intelligent authentication** with automatic fallback:
+The add-in authenticates with **Microsoft SSO as the primary path**, with an explicit **Guest role**
+available as a secondary option:
 
-1. **Primary**: Microsoft SSO (Azure AD authentication)
-2. **Fallback**: Hardcoded demo users (for development/testing)
+1. **Primary**: Microsoft SSO (Azure AD / Entra authentication), attempted silently on load
+2. **Secondary**: "Continue as Guest" - a deliberately permission-limited role
 
-The system automatically attempts SSO first and falls back to demo accounts if SSO is not configured or fails.
+Guest is a designed role, not a debugging leftover. Users who choose it are gated throughout the app
+by `isGuest` / `user === 'Guest'` checks - see `TemplatesModal.jsx` (cannot edit or save templates),
+`PersonalizedEmail.jsx` (send options hidden), and `App.jsx` (no email claim available, falls back to
+the bare display name). Guests receive no access token.
 
 ## Current Configuration Status
 
-🟡 **SSO is currently in FALLBACK MODE**
+**SSO is LIVE.** The Azure AD app registration exists in the Northbridge tenant and `manifest.xml`
+carries a real Application (client) ID:
 
-The add-in will use demo accounts until you complete the Azure AD setup below.
+```
+71f37f39-a330-413a-be61-0baa5ce03ea3
+```
 
-## Quick Toggle Configuration
+Production `SourceLocation` is
+`https://Northbridge-University.github.io/Student-Retention-Add-in/react/dist/index.html`.
 
-You can control SSO behavior in `/react/src/config/ssoConfig.js`:
+The setup steps further down are retained as reference for re-creating or reviewing the registration.
+They are **not** outstanding work.
+
+## Configuration Flags
+
+Behavior is controlled in `/react/src/config/ssoConfig.js`:
 
 ```javascript
 export const SSOConfig = {
-  // Always use fallback (demo users) - set to false to enable SSO attempts
-  FORCE_FALLBACK_MODE: false,
-
-  // Automatically fallback to demo users if SSO fails
   ENABLE_SSO_FALLBACK: true,
-
-  // Show Microsoft SSO option in fallback mode
+  FORCE_FALLBACK_MODE: false,
+  SSO_RETRY_ATTEMPTS: 2,
   SHOW_SSO_OPTION: true,
+  SSO_TIMEOUT: 10000,
 };
 ```
 
-**For Development/Testing:**
-- Set `FORCE_FALLBACK_MODE: true` to always use demo users
-- Set `FORCE_FALLBACK_MODE: false` to enable SSO with automatic fallback
+What these actually do:
+
+| Flag | Effect |
+| --- | --- |
+| `ENABLE_SSO_FALLBACK` | **Display only.** Its single consumer is a branch in `SSO.jsx` deciding whether to surface 13xxx configuration errors to the user. When `true`, config errors are suppressed from the UI. It grants no access and gates no identity. Setting it to `false` shows raw Azure error codes to end users. |
+| `FORCE_FALLBACK_MODE` | When `true`, skips the silent SSO attempt entirely and goes straight to the sign-in screen. Useful for local development. |
+| `SSO_RETRY_ATTEMPTS` | Retry count before giving up on the silent attempt. |
+| `SHOW_SSO_OPTION` | Whether the "Sign in with Microsoft" button is rendered. |
+| `SSO_TIMEOUT` | Milliseconds before the silent SSO attempt is abandoned. |
+
+**Note:** none of these flags control whether the Guest option appears. The "Continue as Guest" button
+in `SSO.jsx` is rendered unconditionally. Removing or gating Guest access is a code change to
+`SSO.jsx`, not a config change.
 
 ## Azure AD App Registration
 
-To enable Microsoft SSO, you need to register an app in Azure AD:
+Reference for reviewing the existing registration, or creating a replacement.
 
 ### Step 1: Register the Application
 
@@ -48,9 +69,15 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
 2. Click **"+ New registration"**
 3. Fill in the details:
    - **Name**: Student Retention Add-in
-   - **Supported account types**: Accounts in this organizational directory only (Single tenant)
+   - **Supported account types**: see the note below
    - **Redirect URI**: Leave blank for now
 4. Click **Register**
+
+**Supported account types - review this setting.** The current registration is set to
+*All Microsoft account users* (multitenant, including personal Microsoft accounts). For a tool that
+surfaces gradebook data on named at-risk students, confirm this breadth is intentional - for example
+for cross-campus or sister-school access - or narrow it to
+*Accounts in this organizational directory only (Single tenant)*.
 
 ### Step 2: Configure API Permissions
 
@@ -65,7 +92,10 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
 6. Click **"Add permissions"**
 7. Click **"Grant admin consent"** (requires admin privileges)
 
-**⚠️ Important:** Without `openid` and `profile` permissions, SSO will not work!
+**Important:** Without `openid` and `profile` permissions, SSO will not work.
+
+The live registration uses delegated permissions only: `openid`, `profile`, `offline_access`,
+`User.Read`, `User.ReadBasic.All`, `access_as_user`. Nothing high-privilege.
 
 ### Step 3: Configure Redirect URIs
 
@@ -78,14 +108,18 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
    https://localhost:3000
    ```
 5. Check these boxes under **Implicit grant and hybrid flows**:
-   - ✅ Access tokens
-   - ✅ ID tokens
+   - Access tokens
+   - ID tokens
 6. Click **Save**
+
+This is a public SPA client. There is **no client secret in the production authentication path** -
+the add-in calls `Office.auth.getAccessToken` client-side. Any client secrets on the registration
+should be reviewed and retired if unused.
 
 ### Step 4: Note Your Application (Client) ID
 
 1. Go to **"Overview"** in your app registration
-2. Copy the **"Application (client) ID"** - you'll need this next
+2. Copy the **"Application (client) ID"**
 
 ### Step 5: Update the Manifest
 
@@ -119,12 +153,12 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
 - `YOUR_CLIENT_ID_HERE` with your Application (client) ID from Step 4
 - Both occurrences must match
 
-**⚠️ CRITICAL:**
+**Critical:**
 - `openid` scope is **required** for SSO to work
 - WebApplicationInfo **must** be the last child element of VersionOverrides
 - If placed incorrectly, your add-in will be rejected from AppSource
 
-### Step 6: Expose an API (Optional but Recommended)
+### Step 6: Expose an API
 
 1. In your app registration, go to **"Expose an API"**
 2. Click **"+ Add a scope"**
@@ -165,47 +199,18 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
    57fb890c-0dab-4253-a5e0-7188c88b2bb4
    ```
 
-   **⚠️ Important:** If using Office through SharePoint, you MUST include `93d53678-613d-4013-afc1-62e9e444a0a5`
+   **Important:** If using Office through SharePoint, you MUST include `93d53678-613d-4013-afc1-62e9e444a0a5`
 
 4. For each, check the scope `access_as_user`
 5. Click **Add application**
 
-## Testing SSO
+## Local Development
 
-### Option 1: Enable SSO with Fallback (Recommended)
+To skip the silent SSO attempt while working locally, set `FORCE_FALLBACK_MODE: true` in
+`/react/src/config/ssoConfig.js`. This goes straight to the sign-in screen, where "Continue as Guest"
+is available without an Azure AD round trip.
 
-1. In `/react/src/config/ssoConfig.js`:
-   ```javascript
-   FORCE_FALLBACK_MODE: false,
-   ENABLE_SSO_FALLBACK: true,
-   ```
-
-2. Build and deploy your add-in
-3. The system will:
-   - Attempt SSO silently on load
-   - Show demo accounts if SSO fails
-   - Allow switching between SSO and demo accounts
-
-### Option 2: SSO Only (No Fallback)
-
-1. In `/react/src/config/ssoConfig.js`:
-   ```javascript
-   FORCE_FALLBACK_MODE: false,
-   ENABLE_SSO_FALLBACK: false,
-   ```
-
-2. Build and deploy your add-in
-3. Only Microsoft SSO will be available
-
-### Option 3: Fallback Only (Current Mode)
-
-1. In `/react/src/config/ssoConfig.js`:
-   ```javascript
-   FORCE_FALLBACK_MODE: true,
-   ```
-
-2. Only demo accounts will be available
-3. Great for development without Azure AD setup
+Do not commit `FORCE_FALLBACK_MODE: true`.
 
 ## Troubleshooting
 
@@ -222,55 +227,39 @@ To enable Microsoft SSO, you need to register an app in Azure AD:
   - `13006`: App not trusted - check manifest configuration
   - `13012`: Manifest error - verify WebApplicationInfo
 
-### SSO Always Falls Back to Demo Accounts
-1. Check `manifest.xml` has correct Client ID
-2. Verify Azure AD app has correct permissions
-3. Check browser console for error messages
-4. Ensure you're signed in to Microsoft 365
+Note that with `ENABLE_SSO_FALLBACK: true` these codes are suppressed from the UI. Check the browser
+console to see them.
+
+### Users keep landing on the sign-in screen
+1. Check `manifest.xml` has the correct Client ID
+2. Verify the Azure AD app has the correct permissions and that admin consent was granted
+3. Check the browser console for 13xxx error codes
+4. Ensure the user is signed in to Microsoft 365
 
 ### Token Doesn't Contain User Name
 - Ensure `User.Read` and `profile` permissions are granted
 - Check that admin consent was granted in Azure AD
 
-## Demo Accounts
+## Guest Role
 
-When using fallback mode, these demo accounts are available:
+Selecting "Continue as Guest" sets the display name to `Guest` and provides **no access token**.
+Guests are restricted by `isGuest` checks across the app:
 
-- **Angel Baez** - Dean of Academic Affairs
-- **Angel Coronel** - Associate Dean of Academic Affairs
-- **Darlen Gutierrez** - Student Services Coordinator
-- **Victor Blanco** - Student Services Coordinator
-- **Kelvin Saliers** - Full Time Instructor
-- **Yasser Rojas** - Full Time Instructor
+- `TemplatesModal.jsx` - cannot save, edit or delete email templates
+- `PersonalizedEmail.jsx` - send options are hidden
+- `App.jsx` - no email claim is cached, so features keyed on user email are unavailable
 
-You can modify these in `/react/src/components/utility/SSOtemp.jsx`.
+If Guest access should be removed, that is a change to the button in `SSO.jsx`. It is not
+controllable from `ssoConfig.js`.
 
-## Security Best Practices
+## Security Notes
 
-1. **Never commit Azure AD credentials** to version control
+1. Never commit Azure AD credentials to version control
 2. Use different app registrations for dev/staging/prod
 3. Limit API permissions to only what's needed
-4. Regularly review and rotate client secrets (if using)
+4. Review any client secrets on the registration - the production auth path is a public SPA client and does not use one
 5. Monitor authentication logs in Azure AD
-
-## Advanced Configuration
-
-### Custom Token Claims
-
-To add custom claims to the JWT token:
-
-1. Go to **Token configuration** in Azure AD
-2. Click **+ Add optional claim**
-3. Select **ID** token type
-4. Add claims like `email`, `family_name`, `given_name`
-
-### Multi-Tenant Support
-
-To support users from other organizations:
-
-1. In app registration, change **Supported account types** to:
-   - "Accounts in any organizational directory"
-2. Update manifest `<Resource>` to use multi-tenant format
+6. Re-confirm the *Supported account types* breadth described in Step 1
 
 ## Resources
 
@@ -279,15 +268,7 @@ To support users from other organizations:
 - [Microsoft Graph Permissions](https://learn.microsoft.com/en-us/graph/permissions-reference)
 - [Troubleshoot SSO in Office Add-ins](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/troubleshoot-sso-in-office-add-ins)
 
-## Support
-
-If you encounter issues:
-1. Check browser console for detailed error messages
-2. Review Azure AD sign-in logs
-3. Verify all configuration steps were completed
-4. Try fallback mode to isolate SSO-specific issues
-
 ---
 
-**Last Updated**: 2025-12-26
-**Version**: 2.0.0
+**Last Updated**: 2026-08-20
+**Version**: 2.1.0
