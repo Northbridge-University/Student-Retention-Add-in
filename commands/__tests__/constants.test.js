@@ -4,7 +4,6 @@ import {
     parseDate,
     normalizeName,
     formatToLastFirst,
-    normalizeAttendanceValue,
 } from '../src/constants.js';
 
 describe('parseDate', () => {
@@ -104,46 +103,6 @@ describe('formatToLastFirst', () => {
     it('returns a single-token name unchanged (after trim)', () => {
         expect(formatToLastFirst('Cher')).toBe('Cher');
         expect(formatToLastFirst('  Cher  ')).toBe('Cher');
-    });
-});
-
-describe('normalizeAttendanceValue', () => {
-    it('leaves blank/nullish values unchanged', () => {
-        expect(normalizeAttendanceValue(null)).toBeNull();
-        expect(normalizeAttendanceValue(undefined)).toBeUndefined();
-        expect(normalizeAttendanceValue('')).toBe('');
-    });
-
-    it('converts whole-number percents to fractions', () => {
-        expect(normalizeAttendanceValue(67)).toBe(0.67);
-        expect(normalizeAttendanceValue(100)).toBe(1);
-        expect(normalizeAttendanceValue(5)).toBe(0.05);
-    });
-
-    it('leaves values already in fractional form unchanged', () => {
-        expect(normalizeAttendanceValue(0.67)).toBe(0.67);
-        expect(normalizeAttendanceValue(0)).toBe(0);
-        expect(normalizeAttendanceValue(1)).toBe(1); // treated as 100%
-    });
-
-    it('parses percent strings', () => {
-        expect(normalizeAttendanceValue('67%')).toBe(0.67);
-        expect(normalizeAttendanceValue('  67 % ')).toBe(0.67);
-        expect(normalizeAttendanceValue('100%')).toBe(1);
-    });
-
-    it('parses plain numeric strings', () => {
-        expect(normalizeAttendanceValue('67')).toBe(0.67);
-        expect(normalizeAttendanceValue('0.67')).toBe(0.67);
-    });
-
-    it('leaves non-numeric strings untouched', () => {
-        expect(normalizeAttendanceValue('N/A')).toBe('N/A');
-        expect(normalizeAttendanceValue('pending')).toBe('pending');
-    });
-
-    it('is idempotent for already-normalized fractions', () => {
-        expect(normalizeAttendanceValue(normalizeAttendanceValue(67))).toBe(0.67);
     });
 });
 

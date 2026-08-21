@@ -18,7 +18,6 @@ import {
     normalizeName,
     formatToLastFirst,
     parseDate,
-    normalizeAttendanceValue,
 } from './constants.js';
 import { findColumnIndex, normalizeHeader } from '../../shared/excel-helpers.js';
 import { BATCH_SIZE } from '../../shared/constants.js';
@@ -389,7 +388,6 @@ export async function importMasterListFromExtension(payload) {
             const masterStudentNameCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.STUDENT_NAME_COLS);
             const masterGradebookCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.gradeBook);
             const masterAssignedCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.assigned);
-            const masterAttendanceCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.attendance);
             const masterMissingAssignmentsCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.COLUMN_MAPPINGS.courseMissingAssignments);
             const incomingMissingAssignmentsCol = findColumnIndex(normalizedIncomingHeaders, CONSTANTS.COLUMN_MAPPINGS.courseMissingAssignments);
             const masterIdCol = findColumnIndex(normalizedMasterHeaders, CONSTANTS.STUDENT_ID_COLS);
@@ -574,13 +572,6 @@ export async function importMasterListFromExtension(payload) {
                             cellValue = formatToLastFirst(String(cellValue));
                         }
 
-                        // Normalize attendance to a fraction (67 or "67%" -> 0.67)
-                        // so the "0%" number format displays it as "67%" instead
-                        // of "6700%".
-                        if (masterColIdx === masterAttendanceCol && cellValue !== "") {
-                            cellValue = normalizeAttendanceValue(cellValue);
-                        }
-
                         // Wrap Gradebook URLs in HYPERLINK formula
                         if (masterColIdx === masterGradebookCol && cellValue) {
                             const urlString = String(cellValue).trim();
@@ -659,14 +650,7 @@ export async function importMasterListFromExtension(payload) {
                                 formulaRow[colIdx] = preserved.formulas[colIdx];
                                 newRow[colIdx] = preserved.values[colIdx] || "";
                             } else if (preserved.values[colIdx] !== undefined) {
-                                let preservedVal = preserved.values[colIdx];
-                                // Attendance carried over from the existing sheet must be
-                                // normalized too, otherwise a stale whole-number value (43)
-                                // re-renders as "4300%" under the "0%" number format.
-                                if (colIdx === masterAttendanceCol && preservedVal !== "") {
-                                    preservedVal = normalizeAttendanceValue(preservedVal);
-                                }
-                                newRow[colIdx] = preservedVal;
+                                newRow[colIdx] = preserved.values[colIdx];
                             }
                         }
                     }
