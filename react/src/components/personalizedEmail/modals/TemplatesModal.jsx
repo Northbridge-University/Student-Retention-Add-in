@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { EMAIL_TEMPLATES_KEY } from '../utils/constants';
 
+// Addresses permitted to set a custom author name when saving a template.
+// Everyone else gets the Author field fixed to their own display name.
+//
+// This was previously hardcoded to a single address on the pre-rebrand
+// ftccollege.edu domain, which meant the capability had already stopped
+// working before it was replaced here. Entries must be lowercase.
+// Set to [] to remove the custom-author capability entirely.
+const AUTHOR_OVERRIDE_ALLOWLIST = ['dvann@northbridge.edu'];
+
 export default function TemplatesModal({ isOpen, onClose, onLoadTemplate, user, userEmail, currentFrom, currentSubject, currentBody, currentCC, templates, onTemplatesChange }) {
     const [expandedAuthors, setExpandedAuthors] = useState(new Set());
     const [showSaveModal, setShowSaveModal] = useState(false);
@@ -12,7 +21,7 @@ export default function TemplatesModal({ isOpen, onClose, onLoadTemplate, user, 
     const [lastLoadedName, setLastLoadedName] = useState('');
 
     const isGuest = user === 'Guest';
-    const canEditAuthor = userEmail?.toLowerCase() === 'vblanco1@ftccollege.edu';
+    const canEditAuthor = AUTHOR_OVERRIDE_ALLOWLIST.includes(userEmail?.toLowerCase() ?? '');
 
     const saveTemplates = async (templatesArray) => {
         await Excel.run(async (context) => {
