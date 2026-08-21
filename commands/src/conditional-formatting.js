@@ -337,7 +337,7 @@ export async function applyAttendanceConditionalFormatting(context, sheet, heade
         }
 
         const range = sheet.getUsedRange();
-        range.load("rowCount");
+        range.load("values, rowCount");
         await context.sync();
 
         if (range.rowCount <= 1) {
@@ -347,23 +347,35 @@ export async function applyAttendanceConditionalFormatting(context, sheet, heade
 
         const attendanceColumnRange = sheet.getRangeByIndexes(1, attendanceColIdx, range.rowCount - 1, 1);
 
-        // Format as percentage so 0.38 displays as "38%"
-        attendanceColumnRange.numberFormat = [["0%"]];
+        // Keep attendance as a plain number, like the Grade column (67, not "67%").
+        // Reset to General so any legacy "0%" format from earlier versions — which
+        // rendered a whole-number 67 as "6700%" — is cleared off existing sheets.
+        attendanceColumnRange.numberFormat = [["General"]];
+
+        // Detect whether values are on a 0-1 or 0-100 scale (same heuristic as Grade)
+        let isPercentScale = false;
+        for (let i = 1; i < Math.min(range.rowCount, 10); i++) {
+            const val = range.values[i] && range.values[i][attendanceColIdx];
+            if (typeof val === 'number' && val > 1) {
+                isPercentScale = true;
+                break;
+            }
+        }
 
         // Clear existing conditional formats on the column to avoid duplicates
         attendanceColumnRange.conditionalFormats.clearAll();
 
-        // Apply 3-color scale: Red (low) -> Yellow (70%) -> Green (high)
+        // Apply 3-color scale: Red (low) -> Yellow (~70%) -> Green (high)
         const conditionalFormat = attendanceColumnRange.conditionalFormats.add(Excel.ConditionalFormatType.colorScale);
         const criteria = {
             minimum: { type: Excel.ConditionalFormatColorCriterionType.lowestValue, color: "#F8696B" },
-            midpoint: { type: Excel.ConditionalFormatColorCriterionType.number, formula: "0.7", color: "#FFEB84" },
+            midpoint: { type: Excel.ConditionalFormatColorCriterionType.number, formula: isPercentScale ? "70" : "0.7", color: "#FFEB84" },
             maximum: { type: Excel.ConditionalFormatColorCriterionType.highestValue, color: "#63BE7B" }
         };
         conditionalFormat.colorScale.criteria = criteria;
 
         await context.sync();
-        console.log("ImportFromExtension: Conditional formatting and percentage format applied to Attendance % column");
+        console.log("ImportFromExtension: Numeric format and conditional formatting applied to Attendance column");
     } catch (error) {
         console.error("ImportFromExtension: Error applying attendance conditional formatting:", error);
         // Don't throw - formatting is not critical

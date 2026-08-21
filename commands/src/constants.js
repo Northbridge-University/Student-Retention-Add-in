@@ -113,47 +113,6 @@ export function parseDate(dateValue) {
 }
 
 /**
- * Normalizes an attendance value to a fraction so it displays correctly under
- * the "0%" number format applied to the Attendance % column (Excel multiplies
- * the stored value by 100 for display, so 0.67 -> "67%").
- *
- * Incoming data is inconsistent: it may arrive as a whole-number percent (67),
- * a fraction (0.67), or a percent string ("67%"). This collapses all of those
- * to the fractional form:
- *   67     -> 0.67
- *   "67%"  -> 0.67
- *   0.67   -> 0.67   (already a fraction; left as-is)
- *   1      -> 1      (treated as 100%, consistent with ldaProcessor)
- *
- * Non-numeric or blank values are returned unchanged so we never corrupt
- * unexpected cell contents.
- * @param {*} value The raw attendance cell value.
- * @returns {*} The value as a fraction, or the original value if not numeric.
- */
-export const normalizeAttendanceValue = (value) => {
-    if (value === null || value === undefined || value === '') return value;
-
-    let num;
-    if (typeof value === 'number') {
-        num = value;
-    } else if (typeof value === 'string') {
-        // Strip a trailing percent sign and surrounding whitespace, e.g. "67%".
-        const cleaned = value.trim().replace(/%$/, '').trim();
-        if (cleaned === '') return value;
-        num = Number(cleaned);
-        if (Number.isNaN(num)) return value; // Not a number — leave untouched.
-    } else {
-        return value;
-    }
-
-    if (!Number.isFinite(num)) return value;
-
-    // Values greater than 1 are whole-number percents (67 -> 0.67). Values of
-    // 1 or less are already fractional (0.67 -> 0.67, 1 -> 100%).
-    return num > 1 ? num / 100 : num;
-};
-
-/**
  * Helper to normalize names from "Last, First" or "First Last" to "first last"
  * for consistent matching.
  * @param {string} name The name to normalize.
